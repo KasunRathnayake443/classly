@@ -35,14 +35,14 @@ export default function SpaceSettingsPage() {
     if (!window.confirm('Delete this space? This will remove all content and enrollments. This cannot be undone.')) return
     setDeleting(true)
     await supabase.from('spaces').delete().eq('id', spaceId)
-    navigate('/')
+    navigate('/teacher')
   }
 
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
 
   return (
     <div className="p-6 max-w-xl mx-auto">
-      <Link to={`/spaces/${spaceId}`} className="text-sm text-gray-400 hover:text-brand-500 flex items-center gap-1 mb-6">
+      <Link to={`/teacher/spaces/${spaceId}`} className="text-sm text-gray-400 hover:text-brand-500 flex items-center gap-1 mb-6">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>

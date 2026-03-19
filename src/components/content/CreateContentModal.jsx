@@ -19,9 +19,38 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
 
   async function onSubmit(data) {
     setError('')
+
+    // Validate quiz questions before saving
+    if (type === 'quiz') {
+      for (let i = 0; i < data.questions.length; i++) {
+        const q = data.questions[i]
+        const filledOptions = q.options.filter(o => o.trim() !== '')
+
+        if (!q.question.trim()) {
+          setError(`Question ${i + 1} is empty.`)
+          return
+        }
+        if (filledOptions.length < 2) {
+          setError(`Question ${i + 1} needs at least 2 options.`)
+          return
+        }
+        // Check for duplicate options
+        const unique = new Set(filledOptions.map(o => o.trim().toLowerCase()))
+        if (unique.size !== filledOptions.length) {
+          setError(`Question ${i + 1} has duplicate options — each option must be unique.`)
+          return
+        }
+        // Make sure correct answer option isn't empty
+        const correctOption = q.options[parseInt(q.correct)]
+        if (!correctOption || !correctOption.trim()) {
+          setError(`Question ${i + 1}: the selected correct answer is empty. Please fill it in.`)
+          return
+        }
+      }
+    }
+
     setLoading(true)
     try {
-      // Insert the content row
       const { data: content, error: contentErr } = await supabase
         .from('content')
         .insert({
@@ -35,15 +64,18 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
         .single()
       if (contentErr) throw contentErr
 
-      // If quiz, insert questions
       if (type === 'quiz' && data.questions?.length) {
-        const questionsToInsert = data.questions.map((q, i) => ({
-          content_id: content.id,
-          question: q.question,
-          options: q.options.filter(Boolean),
-          correct_answer: q.options[parseInt(q.correct)],
-          order_index: i,
-        }))
+        const questionsToInsert = data.questions.map((q, i) => {
+          const filledOptions = q.options.filter(o => o.trim() !== '')
+          const correctAnswer = q.options[parseInt(q.correct)].trim()
+          return {
+            content_id: content.id,
+            question: q.question.trim(),
+            options: filledOptions,
+            correct_answer: correctAnswer,
+            order_index: i,
+          }
+        })
         const { error: qErr } = await supabase.from('quiz_questions').insert(questionsToInsert)
         if (qErr) throw qErr
       }
@@ -102,7 +134,7 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
             </div>
           )}
 
-          {/* Assignment description */}
+          {/* Assignment */}
           {type === 'assignment' && (
             <>
               <div>
@@ -122,32 +154,50 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <label className="label mb-0">Questions</label>
-                <button type="button" onClick={() => append({ question: '', options: ['', '', '', ''], correct: '0' })}
-                  className="text-xs text-brand-500 hover:underline">+ Add question</button>
+                <button type="button"
+                  onClick={() => append({ question: '', options: ['', '', '', ''], correct: '0' })}
+                  className="text-xs text-brand-500 hover:underline">
+                  + Add question
+                </button>
               </div>
+
               {fields.map((field, qi) => (
                 <div key={field.id} className="border border-gray-100 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-500">Question {qi + 1}</span>
                     {fields.length > 1 && (
-                      <button type="button" onClick={() => remove(qi)} className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                      <button type="button" onClick={() => remove(qi)}
+                        className="text-xs text-red-400 hover:text-red-600">Remove</button>
                     )}
                   </div>
-                  <input className="input" placeholder="Enter question..."
+
+                  <input className="input" placeholder="Enter your question here..."
                     {...register(`questions.${qi}.question`, { required: true })} />
+
+                  <p className="text-xs text-gray-400">
+                    Fill in each option and select the radio button next to the correct answer. All options must be unique.
+                  </p>
+
                   <div className="space-y-2">
                     {[0, 1, 2, 3].map(oi => (
                       <div key={oi} className="flex items-center gap-2">
-                        <input type="radio" value={String(oi)}
-                          {...register(`questions.${qi}.correct`)} className="accent-brand-500" />
-                        <input className="input text-sm" placeholder={`Option ${oi + 1}`}
-                          {...register(`questions.${qi}.options.${oi}`)} />
+                        <input
+                          type="radio"
+                          value={String(oi)}
+                          {...register(`questions.${qi}.correct`)}
+                          className="accent-brand-500 flex-shrink-0"
+                        />
+                        <input
+                          className="input text-sm"
+                          placeholder={`Option ${oi + 1}${oi < 2 ? ' (required)' : ' (optional)'}`}
+                          {...register(`questions.${qi}.options.${oi}`)}
+                        />
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-400">Select the radio button next to the correct answer.</p>
                 </div>
               ))}
+
               <div>
                 <label className="label">Due date <span className="text-gray-400 font-normal">(optional)</span></label>
                 <input type="datetime-local" className="input" {...register('due_at')} />
