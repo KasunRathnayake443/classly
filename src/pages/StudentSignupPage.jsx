@@ -20,11 +20,7 @@ export default function StudentSignupPage() {
   if (success) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="card p-8 max-w-sm w-full text-center">
-        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
+        <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Check your email</h2>
         <p className="text-sm text-gray-500">Click the confirmation link to activate your account.</p>
         <Link to="/student/login" className="btn btn-primary mt-5 w-full" style={{ background: '#7c3aed', borderColor: '#7c3aed' }}>Go to login</Link>
@@ -36,11 +32,7 @@ export default function StudentSignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-violet-600 rounded-xl flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
           <span className="text-xl font-semibold text-gray-900">Skooly</span>
         </div>
         <div className="card p-6">

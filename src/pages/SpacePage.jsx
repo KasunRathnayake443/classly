@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import CreateContentModal from '../components/content/CreateContentModal'
+import AnnouncementModal from '../components/ui/AnnouncementModal'
 
 const TYPE_STYLES = {
   note:       { label: 'Note',       bg: 'bg-green-50',  text: 'text-green-700' },
@@ -231,6 +232,132 @@ function ProgressTab({ students, content, spaceId }) {
   )
 }
 
+
+function timeAgo(date) {
+  const seconds = Math.floor((new Date() - new Date(date)) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return new Date(date).toLocaleDateString()
+}
+
+function AnnouncementsTab({ announcements, onRefresh }) {
+  const [actionLoading, setActionLoading] = useState(false)
+  const [confirm, setConfirm] = useState(null)
+  const now = new Date()
+
+  async function togglePin(a) {
+    await supabase.from('announcements').update({ is_pinned: !a.is_pinned }).eq('id', a.id)
+    onRefresh()
+  }
+
+  async function deleteAnnouncement(a) {
+    setConfirm({
+      message: `Delete "${a.title}"? Students will no longer see this announcement.`,
+      onConfirm: async () => {
+        setActionLoading(true)
+        await supabase.from('announcements').delete().eq('id', a.id)
+        setConfirm(null)
+        setActionLoading(false)
+        onRefresh()
+      }
+    })
+  }
+
+  // Split into published and scheduled
+  const published = announcements.filter(a => !a.scheduled_for || new Date(a.scheduled_for) <= now)
+  const scheduled = announcements.filter(a => a.scheduled_for && new Date(a.scheduled_for) > now)
+
+  return (
+    <div className="space-y-4">
+      {announcements.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-gray-400">
+          No announcements yet. Click "Announce" to send one to your students.
+        </div>
+      ) : (
+        <>
+          {/* Scheduled */}
+          {scheduled.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Scheduled</h3>
+              <div className="space-y-2">
+                {scheduled.map(a => (
+                  <AnnouncementCard key={a.id} a={a} onPin={togglePin} onDelete={deleteAnnouncement} isScheduled />
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Published */}
+          {published.length > 0 && (
+            <div>
+              {scheduled.length > 0 && (
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Published</h3>
+              )}
+              <div className="space-y-2">
+                {published.map(a => (
+                  <AnnouncementCard key={a.id} a={a} onPin={togglePin} onDelete={deleteAnnouncement} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {confirm && (
+        <ConfirmDialog
+          message={confirm.message}
+          loading={actionLoading}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function AnnouncementCard({ a, onPin, onDelete, isScheduled }) {
+  return (
+    <div className={`card p-4 ${a.is_pinned ? 'border-amber-200 bg-amber-50/30' : ''} ${isScheduled ? 'opacity-70' : ''}`}>
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            {a.is_pinned && (
+              <span className="badge badge-amber gap-1 text-xs">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16 4v6l2 2v2h-6v6l-1 1-1-1v-6H4v-2l2-2V4h10z"/>
+                </svg>
+                Pinned
+              </span>
+            )}
+            {isScheduled && (
+              <span className="badge badge-gray text-xs">
+                Scheduled: {new Date(a.scheduled_for).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-gray-900">{a.title}</p>
+          {a.body && <p className="text-sm text-gray-500 mt-1 whitespace-pre-wrap">{a.body}</p>}
+          <p className="text-xs text-gray-400 mt-2">{timeAgo(a.created_at)}</p>
+        </div>
+        {/* Actions */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => onPin(a)} title={a.is_pinned ? 'Unpin' : 'Pin'}
+            className={`p-1.5 rounded-lg transition-colors ${a.is_pinned ? 'text-amber-500 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-500 hover:bg-amber-50'}`}>
+            <svg className="w-4 h-4" fill={a.is_pinned ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/>
+            </svg>
+          </button>
+          <button onClick={() => onDelete(a)} title="Delete"
+            className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SpacePage() {
   const { spaceId } = useParams()
   const navigate = useNavigate()
@@ -242,6 +369,8 @@ export default function SpacePage() {
   const [pending, setPending] = useState([])
   const [tab, setTab] = useState('content')
   const [showCreate, setShowCreate] = useState(false)
+  const [showAnnouncement, setShowAnnouncement] = useState(false)
+  const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [confirm, setConfirm] = useState(null)
@@ -250,19 +379,26 @@ export default function SpacePage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [spaceRes, contentRes, enrollRes] = await Promise.all([
+    const now = new Date().toISOString()
+    const [spaceRes, contentRes, enrollRes, announcementsRes] = await Promise.all([
       supabase.from('spaces').select('*').eq('id', spaceId).single(),
       supabase.from('content').select('*').eq('space_id', spaceId).order('created_at', { ascending: false }),
       supabase.from('enrollments')
         .select('id, joined_at, status, profiles(id, full_name, email)')
         .eq('space_id', spaceId)
         .order('joined_at', { ascending: true }),
+      supabase.from('announcements')
+        .select('*')
+        .eq('space_id', spaceId)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false }),
     ])
     setSpace(spaceRes.data)
     setContent(contentRes.data || [])
     const enrollments = enrollRes.data || []
     setStudents(enrollments.filter(e => e.status === 'active'))
     setPending(enrollments.filter(e => e.status === 'pending'))
+    setAnnouncements(announcementsRes.data || [])
     setLoading(false)
   }
 
@@ -343,10 +479,11 @@ export default function SpacePage() {
   if (!space) return <div className="p-6 text-sm text-red-500">Space not found.</div>
 
   const TABS = [
-    { key: 'content',  label: `Content (${content.length})` },
-    { key: 'progress', label: 'Progress' },
-    { key: 'students', label: `Students (${students.length})` },
-    { key: 'pending',  label: pending.length > 0 ? `Pending (${pending.length})` : 'Pending' },
+    { key: 'content',       label: `Content (${content.length})` },
+    { key: 'progress',      label: 'Progress' },
+    { key: 'announcements', label: `Announcements (${announcements.length})` },
+    { key: 'students',      label: `Students (${students.length})` },
+    { key: 'pending',       label: pending.length > 0 ? `Pending (${pending.length})` : 'Pending' },
   ]
 
   return (
@@ -364,6 +501,12 @@ export default function SpacePage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
             {space.join_code}
+          </button>
+          <button onClick={() => setShowAnnouncement(true)} className="btn btn-secondary text-sm gap-1.5">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+            </svg>
+            Announce
           </button>
           <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm">
             + Add content
@@ -428,6 +571,14 @@ export default function SpacePage() {
       {/* Progress tab */}
       {tab === 'progress' && (
         <ProgressTab students={students} content={content} spaceId={spaceId} />
+      )}
+
+      {/* Announcements tab */}
+      {tab === 'announcements' && (
+        <AnnouncementsTab
+          announcements={announcements}
+          onRefresh={fetchAll}
+        />
       )}
 
       {/* Students tab */}
@@ -513,6 +664,14 @@ export default function SpacePage() {
             </div>
           ))}
         </div>
+      )}
+
+      {showAnnouncement && (
+        <AnnouncementModal
+          spaceId={spaceId}
+          onClose={() => setShowAnnouncement(false)}
+          onCreated={() => { fetchAll(); setShowAnnouncement(false) }}
+        />
       )}
 
       {showCreate && (

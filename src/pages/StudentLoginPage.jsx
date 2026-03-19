@@ -20,11 +20,7 @@ export default function StudentLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-violet-600 rounded-xl flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+         <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
           <span className="text-xl font-semibold text-gray-900">Skooly</span>
         </div>
         <div className="card p-6">

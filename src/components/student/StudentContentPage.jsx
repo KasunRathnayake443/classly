@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import RichTextRenderer from '../ui/RichTextRenderer'
 
 const ACCEPTED_FILES = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -227,9 +228,7 @@ export default function StudentContentPage() {
       {/* NOTE */}
       {content.type === 'note' && (
         <div className="card p-6">
-          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-            {content.body || <span className="text-gray-400 italic">No content.</span>}
-          </p>
+          <RichTextRenderer html={content.body} />
         </div>
       )}
 

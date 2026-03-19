@@ -11,6 +11,7 @@ import StudentLoginPage from './pages/StudentLoginPage'
 import StudentSignupPage from './pages/StudentSignupPage'
 
 import DashboardPage from './pages/DashboardPage'
+import ProfilePage from './pages/ProfilePage'
 import SpacePage from './pages/SpacePage'
 import SpaceSettingsPage from './pages/SpaceSettingsPage'
 import ContentPage from './pages/ContentPage'
@@ -19,6 +20,7 @@ import StudentDashboard from './components/student/StudentDashboard'
 import JoinSpacePage from './components/student/JoinSpacePage'
 import StudentSpacePage from './components/student/StudentSpacePage'
 import StudentContentPage from './components/student/StudentContentPage'
+import NotificationsPage from './components/student/NotificationsPage'
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -69,6 +71,7 @@ export default function App() {
         <Route path="spaces/:spaceId" element={<SpacePage />} />
         <Route path="spaces/:spaceId/settings" element={<SpaceSettingsPage />} />
         <Route path="spaces/:spaceId/content/:contentId" element={<ContentPage />} />
+        <Route path="profile" element={<ProfilePage />} />
       </Route>
 
       {/* Student area */}
@@ -77,6 +80,8 @@ export default function App() {
         <Route path="join" element={<JoinSpacePage />} />
         <Route path="spaces/:spaceId" element={<StudentSpacePage />} />
         <Route path="spaces/:spaceId/content/:contentId" element={<StudentContentPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

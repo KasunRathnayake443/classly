@@ -11,23 +11,10 @@ export default function LandingPage() {
       {/* Nav */}
       <nav style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 40px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, background: '#4f46e5', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="16" height="16" fill="white" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+           <img src="/logo.png" alt="Skooly" className="w-12 h-12 rounded-lg object-cover" />
           <span style={{ color: 'white', fontWeight: 600, fontSize: 18, letterSpacing: '-0.02em' }}>Skooly</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/teacher/login" style={{ fontSize: 13, color: '#9ca3af', padding: '8px 16px', borderRadius: 8, textDecoration: 'none', transition: 'color 0.2s' }}
-            onMouseOver={e => e.target.style.color='white'} onMouseOut={e => e.target.style.color='#9ca3af'}>
-            Teacher login
-          </Link>
-          <Link to="/student/login" style={{ fontSize: 13, color: '#9ca3af', padding: '8px 16px', borderRadius: 8, textDecoration: 'none' }}
-            onMouseOver={e => e.target.style.color='white'} onMouseOut={e => e.target.style.color='#9ca3af'}>
-            Student login
-          </Link>
-        </div>
+        
       </nav>
 
       {/* Hero */}

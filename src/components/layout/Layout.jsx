@@ -11,17 +11,14 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
     : (user?.email?.[0]?.toUpperCase() || '?')
+  const avatarUrl = profile?.avatar_url
 
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-brand-500 rounded-lg flex items-center justify-center shadow-sm">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
           <span className="font-semibold text-gray-900 tracking-tight">Skooly</span>
         </div>
         {/* Close button — mobile only */}
@@ -37,9 +34,13 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
       {/* Teacher chip */}
       <div className="p-3 border-b border-gray-100">
         <div className="flex items-center gap-2.5 bg-gray-50 rounded-xl px-3 py-2.5">
-          <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-            {initials}
-          </div>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+              {initials}
+            </div>
+          )}
           <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-900 truncate">{displayName}</p>
             <p className="text-xs text-gray-400">Teacher</p>
@@ -56,6 +57,15 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
           Dashboard
+        </NavLink>
+
+        <NavLink to="/teacher/profile" end onClick={onClose} className={({ isActive }) =>
+          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-brand-50 text-brand-600 font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
+        }>
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          Profile
         </NavLink>
 
         {/* Spaces */}
@@ -164,11 +174,7 @@ export default function Layout() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-brand-500 rounded-md flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-              </svg>
-            </div>
+            <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
             <span className="font-semibold text-gray-900 text-sm">Skooly</span>
           </div>
         </div>

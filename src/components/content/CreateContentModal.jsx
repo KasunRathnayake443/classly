@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
+import RichTextEditor from '../ui/RichTextEditor'
 
 const TYPES = [
   { value: 'note', label: 'Note', desc: 'Rich text reading material' },
@@ -12,6 +13,7 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
   const [type, setType] = useState('note')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [noteContent, setNoteContent] = useState('')
   const { register, handleSubmit, control, formState: { errors } } = useForm({
     defaultValues: { questions: [{ question: '', options: ['', '', '', ''], correct: '0' }] }
   })
@@ -57,7 +59,7 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
           space_id: spaceId,
           type,
           title: data.title,
-          body: data.body || null,
+          body: type === 'note' ? (noteContent || null) : (data.body || null),
           due_at: data.due_at || null,
         })
         .select()
@@ -129,8 +131,12 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
           {type === 'note' && (
             <div>
               <label className="label">Content</label>
-              <textarea className="input min-h-[140px] resize-y" placeholder="Write your note here..."
-                {...register('body')} />
+              <RichTextEditor
+                value={noteContent}
+                onChange={setNoteContent}
+                placeholder="Start writing your note..."
+              />
+              <p className="mt-1.5 text-xs text-gray-400">Use the toolbar to add headings, bold text, lists and more.</p>
             </div>
           )}
 

@@ -5,21 +5,18 @@ import { supabase } from '../../lib/supabase'
 
 const SPACE_COLORS = ['#4F46E5', '#059669', '#D97706', '#DB2777', '#0891B2', '#7C3AED']
 
-function SidebarContent({ profile, user, enrollments, onSignOut, onClose }) {
+function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, onClose }) {
   const displayName = profile?.full_name || user?.email || 'Student'
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
     : (user?.email?.[0]?.toUpperCase() || '?')
+  const avatarUrl = profile?.avatar_url
 
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-violet-600 rounded-lg flex items-center justify-center shadow-sm">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
           <span className="font-semibold text-gray-900 tracking-tight">Skooly</span>
         </div>
         {onClose && (
@@ -33,9 +30,13 @@ function SidebarContent({ profile, user, enrollments, onSignOut, onClose }) {
 
       <div className="p-3 border-b border-gray-100">
         <div className="flex items-center gap-2.5 bg-violet-50 rounded-xl px-3 py-2.5">
-          <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-            {initials}
-          </div>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+              {initials}
+            </div>
+          )}
           <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-900 truncate">{displayName}</p>
             <p className="text-xs text-violet-500">Student</p>
@@ -60,6 +61,34 @@ function SidebarContent({ profile, user, enrollments, onSignOut, onClose }) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
           Join a class
+        </NavLink>
+
+        <NavLink to="/student/profile" onClick={onClose} className={({ isActive }) =>
+          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
+        }>
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          Profile
+        </NavLink>
+
+        <NavLink to="/student/notifications" onClick={onClose} className={({ isActive }) =>
+          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
+        }>
+          <div className="relative flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span>Notifications</span>
+          {unreadCount > 0 && (
+            <span className="ml-auto badge badge-red text-xs">{unreadCount}</span>
+          )}
         </NavLink>
 
         {enrollments.length > 0 && (
@@ -98,10 +127,11 @@ export default function StudentLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [enrollments, setEnrollments] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  useEffect(() => { fetchEnrollments() }, [location.pathname])
+  useEffect(() => { fetchEnrollments(); fetchUnreadCount() }, [location.pathname])
   useEffect(() => { setSidebarOpen(false) }, [location.pathname])
 
   async function fetchEnrollments() {
@@ -112,6 +142,24 @@ export default function StudentLayout() {
       .eq('status', 'active')
       .order('joined_at', { ascending: true })
     setEnrollments(data || [])
+  }
+
+  async function fetchUnreadCount() {
+    const now = new Date().toISOString()
+    // Get all announcement IDs visible to this student
+    const { data: announcementsData } = await supabase
+      .from('announcements')
+      .select('id')
+      .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
+    if (!announcementsData?.length) { setUnreadCount(0); return }
+    const ids = announcementsData.map(a => a.id)
+    // Get which ones student has read
+    const { data: reads } = await supabase
+      .from('announcement_reads')
+      .select('announcement_id')
+      .eq('student_id', user.id)
+      .in('announcement_id', ids)
+    setUnreadCount(ids.length - (reads?.length || 0))
   }
 
   async function handleSignOut() {
@@ -135,6 +183,7 @@ export default function StudentLayout() {
           profile={profile}
           user={user}
           enrollments={enrollments}
+          unreadCount={unreadCount}
           onSignOut={() => setShowLogoutConfirm(true)}
           onClose={() => setSidebarOpen(false)}
         />
@@ -149,11 +198,7 @@ export default function StudentLayout() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-violet-600 rounded-md flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-              </svg>
-            </div>
+            <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
             <span className="font-semibold text-gray-900 text-sm">Skooly</span>
           </div>
         </div>
