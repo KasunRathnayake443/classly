@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { supabase } from './lib/supabase'
 import { useAuth } from './hooks/useAuth'
 
 import Layout from './components/layout/Layout'
@@ -12,6 +13,9 @@ import StudentSignupPage from './pages/StudentSignupPage'
 
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
+import UpgradePage from './pages/UpgradePage'
+import SubscriptionPage from './pages/SubscriptionPage'
+import AdminPage from './pages/AdminPage'
 import SpacePage from './pages/SpacePage'
 import SpaceSettingsPage from './pages/SpaceSettingsPage'
 import ContentPage from './pages/ContentPage'
@@ -42,8 +46,23 @@ function PrivateRoute({ children, role }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <Spinner />
   if (!user) return <Navigate to="/" replace />
-  if (!profile) return <Spinner />  // wait for profile before checking role
-  // Role check — teacher trying to access student area or vice versa
+  if (!profile) return <Spinner />
+  // Suspended account
+  if (profile.is_suspended) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="card p-8 max-w-sm w-full text-center">
+        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <h2 className="text-base font-semibold text-gray-900 mb-2">Account suspended</h2>
+        <p className="text-sm text-gray-500 mb-4">Your account has been suspended. Please contact support.</p>
+        <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
+          className="btn btn-secondary w-full">Sign out</button>
+      </div>
+    </div>
+  )
   if (role && profile.role !== role) {
     return <Navigate to={profile.role === 'student' ? '/student' : '/teacher'} replace />
   }
@@ -72,6 +91,8 @@ export default function App() {
         <Route path="spaces/:spaceId/settings" element={<SpaceSettingsPage />} />
         <Route path="spaces/:spaceId/content/:contentId" element={<ContentPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="upgrade" element={<UpgradePage />} />
+        <Route path="subscription" element={<SubscriptionPage />} />
       </Route>
 
       {/* Student area */}
@@ -82,7 +103,12 @@ export default function App() {
         <Route path="spaces/:spaceId/content/:contentId" element={<StudentContentPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="upgrade" element={<UpgradePage />} />
+        <Route path="subscription" element={<SubscriptionPage />} />
       </Route>
+
+      {/* Hidden admin panel */}
+      <Route path="/skooly-admin-2024" element={<AdminPage />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

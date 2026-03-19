@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { nanoid } from 'nanoid'
+import { isAtLimit } from '../../lib/limits'
 
 export default function CreateSpaceModal({ onClose, onCreated }) {
   const [loading, setLoading] = useState(false)
@@ -10,11 +11,19 @@ export default function CreateSpaceModal({ onClose, onCreated }) {
   const { user } = useAuth()
   const { register, handleSubmit, formState: { errors } } = useForm()
 
-async function onSubmit(data) {
-  setError('')
-  setLoading(true)
-  console.log('user object:', user)  // ADD THIS LINE
-  try {
+  async function onSubmit(data) {
+    setError('')
+    // Fetch fresh plan and space count directly from DB
+    const [{ data: profileData }, { count }] = await Promise.all([
+      supabase.from('profiles').select('plan').eq('id', user.id).single(),
+      supabase.from('spaces').select('*', { count: 'exact', head: true }).eq('teacher_id', user.id),
+    ])
+    if (isAtLimit(profileData?.plan, 'spaces', count || 0)) {
+      setError(`You've reached the free plan limit of 3 spaces. Upgrade to Premium for unlimited spaces.`)
+      return
+    }
+    setLoading(true)
+    try {
       const prefix = data.subject?.slice(0, 3).toUpperCase() || 'CLS'
       const joinCode = `${prefix}-${nanoid(4).toUpperCase()}`
 
@@ -32,7 +41,6 @@ async function onSubmit(data) {
       setLoading(false)
     }
   }
-  
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
@@ -84,6 +92,4 @@ async function onSubmit(data) {
       </div>
     </div>
   )
-  
 }
-

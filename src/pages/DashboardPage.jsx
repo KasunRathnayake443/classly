@@ -8,13 +8,15 @@ import EmptyState from '../components/ui/EmptyState'
 const SPACE_COLORS = ['#4F46E5', '#059669', '#D97706', '#DB2777', '#0891B2', '#7C3AED']
 
 export default function DashboardPage() {
-  const { profile } = useAuth()
-  const { refreshSpaces } = useOutletContext() || {}
+  const { profile, user } = useAuth()
+  const { refreshSpaces, spaceRefreshCount } = useOutletContext() || {}
   const [spaces, setSpaces] = useState([])
+  const [plan, setPlan] = useState('free')
   const [stats, setStats] = useState({ spaces: 0, students: 0, content: 0 })
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { fetchDashboardData() }, [])
+  // Re-fetch whenever sidebar signals a space was created/deleted
+  useEffect(() => { fetchDashboardData() }, [spaceRefreshCount])
 
   useEffect(() => {
     function handleFocus() { fetchDashboardData() }
@@ -23,20 +25,24 @@ export default function DashboardPage() {
   }, [])
 
   async function fetchDashboardData() {
-    const { data: spacesData, error } = await supabase
-      .from('spaces')
-      .select('id, name, subject, join_code, created_at')
-      .order('created_at', { ascending: false })
-
+    // Fetch plan fresh + spaces ordered oldest first (so index matches lock logic)
+    const [profileRes, spacesRes] = await Promise.all([
+      supabase.from('profiles').select('plan').eq('id', user?.id).single(),
+      supabase.from('spaces').select('id, name, subject, join_code, created_at').order('created_at', { ascending: true }),
+    ])
+    setPlan(profileRes.data?.plan || 'free')
+    const spacesData = spacesRes.data
+    const error = spacesRes.error
     if (error) { setLoading(false); return }
 
     const spaceList = spacesData || []
-    const enriched = await Promise.all(spaceList.map(async (space) => {
+    const currentPlan = profileRes.data?.plan || 'free'
+    const enriched = await Promise.all(spaceList.map(async (space, i) => {
       const [{ count: studentCount }, { count: contentCount }] = await Promise.all([
         supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('space_id', space.id).eq('status', 'active'),
         supabase.from('content').select('*', { count: 'exact', head: true }).eq('space_id', space.id),
       ])
-      return { ...space, studentCount: studentCount || 0, contentCount: contentCount || 0 }
+      return { ...space, studentCount: studentCount || 0, contentCount: contentCount || 0, isLocked: currentPlan !== 'premium' && i >= 3 }
     }))
 
     setSpaces(enriched)
@@ -102,36 +108,54 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {spaces.map((space, i) => (
             <Link key={space.id} to={`/teacher/spaces/${space.id}`}
-              className="card p-5 hover:border-brand-200 hover:shadow-card-hover transition-all duration-150 group">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
-                  style={{ background: SPACE_COLORS[i % SPACE_COLORS.length] }}>
-                  {space.name[0].toUpperCase()}
+              className={`card p-5 transition-all duration-150 group relative overflow-hidden ${space.isLocked ? 'opacity-75 hover:border-red-200' : 'hover:border-brand-200 hover:shadow-card-hover'}`}>
+
+              {/* Locked banner */}
+              {space.isLocked && (
+                <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Locked — subscribe to Premium to unlock
+                </div>
+              )}
+
+              <div className={`flex items-start gap-3 ${space.isLocked ? 'mt-7' : ''}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm ${space.isLocked ? 'bg-gray-300' : ''}`}
+                  style={!space.isLocked ? { background: SPACE_COLORS[i % SPACE_COLORS.length] } : {}}>
+                  {space.isLocked ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  ) : space.name[0].toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 truncate group-hover:text-brand-600 transition-colors">
+                  <p className={`font-semibold truncate transition-colors ${space.isLocked ? 'text-gray-400' : 'text-gray-900 group-hover:text-brand-600'}`}>
                     {space.name}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">{space.subject || 'No subject'}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-50 text-xs text-gray-400">
-                <span className="flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  {space.studentCount}
-                </span>
-                <span className="flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  {space.contentCount}
-                </span>
-                <span className="ml-auto font-mono tracking-widest text-gray-300 text-xs">
-                  {space.join_code}
-                </span>
-              </div>
+
+              {!space.isLocked && (
+                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-50 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    {space.studentCount}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {space.contentCount}
+                  </span>
+                  <span className="ml-auto font-mono tracking-widest text-gray-300 text-xs">
+                    {space.join_code}
+                  </span>
+                </div>
+              )}
             </Link>
           ))}
         </div>

@@ -3,6 +3,9 @@ import { useParams, Link, useNavigate, useOutletContext } from 'react-router-dom
 import { supabase } from '../lib/supabase'
 import CreateContentModal from '../components/content/CreateContentModal'
 import AnnouncementModal from '../components/ui/AnnouncementModal'
+import { UpgradeBanner, UpgradeModal } from '../components/ui/UpgradePrompt'
+import { isAtLimit } from '../lib/limits'
+import { useAuth } from '../hooks/useAuth'
 
 const TYPE_STYLES = {
   note:       { label: 'Note',       bg: 'bg-green-50',  text: 'text-green-700' },
@@ -362,6 +365,7 @@ export default function SpacePage() {
   const { spaceId } = useParams()
   const navigate = useNavigate()
   const { refreshSpaces } = useOutletContext() || {}
+  const { profile, user } = useAuth()
 
   const [space, setSpace] = useState(null)
   const [content, setContent] = useState([])
@@ -370,6 +374,7 @@ export default function SpacePage() {
   const [tab, setTab] = useState('content')
   const [showCreate, setShowCreate] = useState(false)
   const [showAnnouncement, setShowAnnouncement] = useState(false)
+  const [showUpgrade, setShowUpgrade] = useState(null) // { title, description }
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
@@ -414,6 +419,11 @@ export default function SpacePage() {
   }
 
   async function approveStudent(enrollment) {
+    const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
+    if (isAtLimit(p?.plan, 'studentsPerSpace', students.length)) {
+      setShowUpgrade({ title: 'Student limit reached', description: 'Free plan allows 20 students per space. Upgrade for unlimited.' })
+      return
+    }
     setActionLoading(true)
     await supabase.from('enrollments').update({ status: 'active' }).eq('id', enrollment.id)
     setPending(prev => prev.filter(e => e.id !== enrollment.id))
@@ -475,8 +485,46 @@ export default function SpacePage() {
     })
   }
 
+  // Determine if this space is locked (free plan, not in first 3 spaces)
+  const [spaceIsLocked, setSpaceIsLocked] = useState(false)
+
+  useEffect(() => {
+    async function checkLock() {
+      const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
+      if (p?.plan === 'premium') { setSpaceIsLocked(false); return }
+      // Get all spaces ordered by created_at to find position
+      const { data: allSpaces } = await supabase
+        .from('spaces')
+        .select('id')
+        .eq('teacher_id', user?.id)
+        .order('created_at', { ascending: true })
+      const idx = (allSpaces || []).findIndex(s => s.id === spaceId)
+      setSpaceIsLocked(idx >= 3)
+    }
+    if (user && spaceId) checkLock()
+  }, [spaceId, user])
+
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
   if (!space) return <div className="p-6 text-sm text-red-500">Space not found.</div>
+
+  // Check if this space is locked (free plan, space is beyond first 3)
+  if (spaceIsLocked) {
+    return (
+      <div className="p-6 max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">This space is locked</h2>
+        <p className="text-sm text-gray-500 mb-6">You've exceeded the free plan limit of 3 spaces. Upgrade to Premium to unlock all your spaces, or delete this one.</p>
+        <div className="flex gap-3">
+          <Link to="/teacher/upgrade" className="btn btn-primary">Upgrade to Premium</Link>
+          <Link to="/teacher/subscription" className="btn btn-secondary">Manage subscription</Link>
+        </div>
+      </div>
+    )
+  }
 
   const TABS = [
     { key: 'content',       label: `Content (${content.length})` },
@@ -508,7 +556,14 @@ export default function SpacePage() {
             </svg>
             Announce
           </button>
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm">
+          <button onClick={async () => {
+            const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
+            if (isAtLimit(p?.plan, 'contentPerSpace', content.length)) {
+              setShowUpgrade({ title: 'Content limit reached', description: 'Free plan allows 10 content items per space. Upgrade for unlimited.' })
+              return
+            }
+            setShowCreate(true)
+          }} className="btn btn-primary text-sm">
             + Add content
           </button>
           <button onClick={handleDeleteSpace}
@@ -664,6 +719,14 @@ export default function SpacePage() {
             </div>
           ))}
         </div>
+      )}
+
+      {showUpgrade && (
+        <UpgradeModal
+          title={showUpgrade.title}
+          description={showUpgrade.description}
+          onClose={() => setShowUpgrade(null)}
+        />
       )}
 
       {showAnnouncement && (
