@@ -16,7 +16,11 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
+          <div className="w-7 h-7 bg-violet-600 rounded-lg flex items-center justify-center shadow-sm">
+            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
+            </svg>
+          </div>
           <span className="font-semibold text-gray-900 tracking-tight">Skooly</span>
         </div>
         {onClose && (
@@ -146,20 +150,32 @@ export default function StudentLayout() {
 
   async function fetchUnreadCount() {
     const now = new Date().toISOString()
-    // Get all announcement IDs visible to this student
-    const { data: announcementsData } = await supabase
-      .from('announcements')
-      .select('id')
+
+    // Space announcements
+    const { data: spaceAnnouncements } = await supabase
+      .from('announcements').select('id')
       .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
-    if (!announcementsData?.length) { setUnreadCount(0); return }
-    const ids = announcementsData.map(a => a.id)
-    // Get which ones student has read
-    const { data: reads } = await supabase
-      .from('announcement_reads')
-      .select('announcement_id')
-      .eq('student_id', user.id)
-      .in('announcement_id', ids)
-    setUnreadCount(ids.length - (reads?.length || 0))
+    const spaceIds = (spaceAnnouncements || []).map(a => a.id)
+
+    // Admin announcements targeting students or all
+    const { data: adminAnnouncements } = await supabase
+      .from('admin_announcements').select('id, target')
+    const adminIds = (adminAnnouncements || [])
+      .filter(a => a.target === 'all' || a.target === 'students')
+      .map(a => a.id)
+
+    let unread = 0
+    if (spaceIds.length > 0) {
+      const { data: spaceReads } = await supabase.from('announcement_reads')
+        .select('announcement_id').eq('student_id', user.id).in('announcement_id', spaceIds)
+      unread += spaceIds.length - (spaceReads?.length || 0)
+    }
+    if (adminIds.length > 0) {
+      const { data: adminReads } = await supabase.from('admin_announcement_reads')
+        .select('announcement_id').eq('user_id', user.id).in('announcement_id', adminIds)
+      unread += adminIds.length - (adminReads?.length || 0)
+    }
+    setUnreadCount(unread)
   }
 
   async function handleSignOut() {
@@ -198,7 +214,11 @@ export default function StudentLayout() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-cover" />
+            <div className="w-6 h-6 bg-violet-600 rounded-md flex items-center justify-center">
+              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
+              </svg>
+            </div>
             <span className="font-semibold text-gray-900 text-sm">Skooly</span>
           </div>
         </div>

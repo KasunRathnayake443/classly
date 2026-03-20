@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { syncSubscriptionStatus } from '../lib/planEngine'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [subscription, setSubscription] = useState({ transaction: null, plan: null })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -31,6 +33,18 @@ export function AuthProvider({ children }) {
       .eq('id', userId)
       .single()
     setProfile(data)
+
+    // Sync subscription for teachers
+    if (data?.role === 'teacher') {
+      try {
+        const sub = await syncSubscriptionStatus(userId)
+        setSubscription(sub)
+        // Re-fetch profile in case plan slug was updated
+        const { data: updated } = await supabase.from('profiles').select('*').eq('id', userId).single()
+        setProfile(updated)
+      } catch (e) { /* non-critical */ }
+    }
+
     setLoading(false)
   }
 
@@ -83,16 +97,18 @@ export function AuthProvider({ children }) {
 
   async function refreshProfile() {
     if (!user) return
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
+    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     setProfile(data)
+    if (data?.role === 'teacher') {
+      try {
+        const sub = await syncSubscriptionStatus(user.id)
+        setSubscription(sub)
+      } catch (e) {}
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signUp, signUpStudent, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, subscription, loading, signUp, signUpStudent, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

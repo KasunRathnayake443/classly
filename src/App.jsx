@@ -24,7 +24,7 @@ import StudentDashboard from './components/student/StudentDashboard'
 import JoinSpacePage from './components/student/JoinSpacePage'
 import StudentSpacePage from './components/student/StudentSpacePage'
 import StudentContentPage from './components/student/StudentContentPage'
-import NotificationsPage from './components/student/NotificationsPage'
+import NotificationsPage from './pages/NotificationsPage'
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -93,6 +93,7 @@ export default function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="upgrade" element={<UpgradePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
       </Route>
 
       {/* Student area */}
@@ -105,10 +106,11 @@ export default function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="upgrade" element={<UpgradePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
       </Route>
 
       {/* Hidden admin panel */}
-      <Route path="/skooly-admin-2024" element={<AdminPage />} />
+      <Route path="/skooly-admin-panel" element={<AdminPage />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

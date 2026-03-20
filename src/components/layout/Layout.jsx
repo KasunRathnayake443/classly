@@ -6,7 +6,7 @@ import CreateSpaceModal from '../spaces/CreateSpaceModal'
 
 const SPACE_COLORS = ['#4F46E5', '#059669', '#D97706', '#DB2777', '#0891B2', '#7C3AED']
 
-function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClose }) {
+function SidebarContent({ profile, user, subscription, unreadCount, spaces, onCreateSpace, onSignOut, onClose }) {
   const displayName = profile?.full_name || user?.email || 'Teacher'
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
@@ -49,8 +49,10 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
             <p className="text-xs font-semibold text-gray-900 truncate">{displayName}</p>
             <p className="text-xs text-gray-400">Teacher</p>
           </div>
-          {profile?.plan !== 'premium' && (
-            <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">Basic</span>
+          {subscription?.plan && (
+            <span className={`ml-auto text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${subscription.plan.is_free ? 'bg-amber-100 text-amber-700' : 'bg-brand-100 text-brand-700'}`}>
+              {subscription.plan.name}
+            </span>
           )}
         </div>
       </div>
@@ -75,6 +77,25 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
           Profile
         </NavLink>
 
+        <NavLink to="/teacher/notifications" onClick={onClose} className={({ isActive }) =>
+          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-brand-50 text-brand-600 font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
+        }>
+          <div className="relative flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span>Notifications</span>
+          {unreadCount > 0 && (
+            <span className="ml-auto text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">{unreadCount}</span>
+          )}
+        </NavLink>
+
         {/* Subscription link */}
         <NavLink to="/teacher/subscription" end onClick={onClose} className={({ isActive }) =>
           `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-brand-50 text-brand-600 font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`
@@ -84,18 +105,6 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
           </svg>
           Subscription
         </NavLink>
-
-        {/* Upgrade link for free plan */}
-        {profile?.plan !== 'premium' && (
-          <NavLink to="/teacher/upgrade" onClick={onClose} className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-amber-50 text-amber-700 font-medium' : 'text-amber-600 hover:bg-amber-50'}`
-          }>
-            <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
-            </svg>
-            Upgrade to Premium
-          </NavLink>
-        )}
 
         {/* Spaces */}
         <div className="mt-4 mb-1">
@@ -142,18 +151,36 @@ function SidebarContent({ profile, user, spaces, onCreateSpace, onSignOut, onClo
 }
 
 export default function Layout() {
-  const { profile, user, signOut } = useAuth()
+  const { profile, user, signOut, subscription } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [spaces, setSpaces] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [showCreateSpace, setShowCreateSpace] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [spaceRefreshCount, setSpaceRefreshCount] = useState(0) // mobile sidebar
 
-  useEffect(() => { fetchSpaces() }, [location.pathname])
+  useEffect(() => { fetchSpaces(); fetchUnreadCount() }, [location.pathname])
   // Close mobile sidebar on route change
   useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+
+  async function fetchUnreadCount() {
+    if (!user) return
+    const { data: adminAnnouncements } = await supabase
+      .from('admin_announcements').select('id, target')
+    const planSlug = profile?.plan || 'free'
+    const relevant = (adminAnnouncements || []).filter(a =>
+      a.target === 'all' || a.target === 'teachers' || a.target === `plan:${planSlug}`
+    )
+    if (!relevant.length) { setUnreadCount(0); return }
+    const { data: reads } = await supabase
+      .from('admin_announcement_reads')
+      .select('announcement_id')
+      .eq('user_id', user.id)
+      .in('announcement_id', relevant.map(a => a.id))
+    setUnreadCount(relevant.length - (reads?.length || 0))
+  }
 
   async function fetchSpaces() {
     const { data } = await supabase
@@ -187,6 +214,8 @@ export default function Layout() {
         <SidebarContent
           profile={profile}
           user={user}
+          subscription={subscription}
+          unreadCount={unreadCount}
           spaces={spaces}
           onCreateSpace={() => { setShowCreateSpace(true); setSidebarOpen(false) }}
           onSignOut={() => setShowLogoutConfirm(true)}

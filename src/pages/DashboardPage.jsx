@@ -8,7 +8,7 @@ import EmptyState from '../components/ui/EmptyState'
 const SPACE_COLORS = ['#4F46E5', '#059669', '#D97706', '#DB2777', '#0891B2', '#7C3AED']
 
 export default function DashboardPage() {
-  const { profile, user } = useAuth()
+  const { profile, user, subscription } = useAuth()
   const { refreshSpaces, spaceRefreshCount } = useOutletContext() || {}
   const [spaces, setSpaces] = useState([])
   const [plan, setPlan] = useState('free')
@@ -37,12 +37,15 @@ export default function DashboardPage() {
 
     const spaceList = spacesData || []
     const currentPlan = profileRes.data?.plan || 'free'
+    // Get plan limits from DB
+    const { data: planData } = await supabase.from('plans').select('max_spaces').eq('slug', currentPlan).single()
+    const maxSpaces = planData?.max_spaces === -1 ? Infinity : (planData?.max_spaces || 3)
     const enriched = await Promise.all(spaceList.map(async (space, i) => {
       const [{ count: studentCount }, { count: contentCount }] = await Promise.all([
         supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('space_id', space.id).eq('status', 'active'),
         supabase.from('content').select('*', { count: 'exact', head: true }).eq('space_id', space.id),
       ])
-      return { ...space, studentCount: studentCount || 0, contentCount: contentCount || 0, isLocked: currentPlan !== 'premium' && i >= 3 }
+      return { ...space, studentCount: studentCount || 0, contentCount: contentCount || 0, isLocked: space.is_locked || i >= maxSpaces }
     }))
 
     setSpaces(enriched)

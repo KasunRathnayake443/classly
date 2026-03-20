@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { nanoid } from 'nanoid'
-import { isAtLimit } from '../../lib/limits'
+import { getPlanLimits } from '../../lib/planEngine'
 
 export default function CreateSpaceModal({ onClose, onCreated }) {
   const [loading, setLoading] = useState(false)

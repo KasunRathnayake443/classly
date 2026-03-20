@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase'
 import CreateContentModal from '../components/content/CreateContentModal'
 import AnnouncementModal from '../components/ui/AnnouncementModal'
 import { UpgradeBanner, UpgradeModal } from '../components/ui/UpgradePrompt'
-import { isAtLimit } from '../lib/limits'
 import { useAuth } from '../hooks/useAuth'
+import { getPlanLimits } from '../lib/planEngine'
 
 const TYPE_STYLES = {
   note:       { label: 'Note',       bg: 'bg-green-50',  text: 'text-green-700' },
@@ -420,8 +420,10 @@ export default function SpacePage() {
 
   async function approveStudent(enrollment) {
     const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-    if (isAtLimit(p?.plan, 'studentsPerSpace', students.length)) {
-      setShowUpgrade({ title: 'Student limit reached', description: 'Free plan allows 20 students per space. Upgrade for unlimited.' })
+    const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
+    const limits = getPlanLimits(planData)
+    if (students.length >= limits.max_students) {
+      setShowUpgrade({ title: 'Student limit reached', description: `Your ${planData?.name || 'current'} plan allows ${planData?.max_students} students per space. Upgrade to add more.` })
       return
     }
     setActionLoading(true)
@@ -558,10 +560,8 @@ export default function SpacePage() {
           </button>
           <button onClick={async () => {
             const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-            if (isAtLimit(p?.plan, 'contentPerSpace', content.length)) {
-              setShowUpgrade({ title: 'Content limit reached', description: 'Free plan allows 10 content items per space. Upgrade for unlimited.' })
-              return
-            }
+            const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
+            // Content is unlimited for all plans — only spaces and students are limited
             setShowCreate(true)
           }} className="btn btn-primary text-sm">
             + Add content
