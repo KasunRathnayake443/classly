@@ -62,7 +62,7 @@ export default function DashboardPage() {
   const firstName = profile?.full_name?.split(' ')[0] || 'there'
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fade-in">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fade-in pb-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="page-title">{greeting}, {firstName} 👋</h1>
@@ -70,7 +70,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
         {loading ? (
           [0,1,2].map(i => (
             <div key={i} className="card p-4 space-y-2">
@@ -85,7 +85,7 @@ export default function DashboardPage() {
         ].map(stat => (
           <div key={stat.label} className="card p-4">
             <p className="text-xs text-gray-500 mb-1.5">{stat.label}</p>
-            <p className={`text-3xl font-bold ${stat.color}`}>{stat.value}</p>
+            <p className={`text-2xl sm:text-3xl font-bold ${stat.color}`}>{stat.value}</p>
           </div>
         ))}
       </div>
@@ -108,10 +108,10 @@ export default function DashboardPage() {
           description='Click the + next to "Spaces" in the sidebar to create your first classroom.'
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {spaces.map((space, i) => (
             <Link key={space.id} to={`/teacher/spaces/${space.id}`}
-              className={`card p-5 transition-all duration-150 group relative overflow-hidden ${space.isLocked ? 'opacity-75 hover:border-red-200' : 'hover:border-brand-200 hover:shadow-card-hover'}`}>
+              className={`card p-4 sm:p-5 transition-all duration-150 group relative overflow-hidden active:scale-98 ${space.isLocked ? 'opacity-75' : 'hover:border-brand-200 hover:shadow-card-hover'}`}>
 
               {/* Locked banner */}
               {space.isLocked && (

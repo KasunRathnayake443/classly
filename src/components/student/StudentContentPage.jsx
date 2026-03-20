@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import RichTextRenderer from '../ui/RichTextRenderer'
+import { getContentState, getContentStateLabel, formatDateTime } from '../../lib/contentState'
 
 const ACCEPTED_FILES = '.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -207,6 +208,28 @@ export default function StudentContentPage() {
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
   if (!content) return <div className="p-6 text-sm text-red-500">Content not found.</div>
 
+  const contentState = getContentState(content)
+
+  // Scheduled — not open yet
+  if (contentState === 'scheduled') {
+    return (
+      <div className="p-6 max-w-lg mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="w-16 h-16 bg-brand-50 rounded-2xl flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">Not available yet</h2>
+        <p className="text-sm text-gray-500 mb-1">This {content.type} opens</p>
+        <p className="text-sm font-semibold text-brand-600 mb-6">{formatDateTime(content.available_from)}</p>
+        <Link to={`/student/spaces/${spaceId}`} className="btn btn-secondary text-sm">Back to space</Link>
+      </div>
+    )
+  }
+
+  // Closed — past end time, show content but block new submissions
+  const isClosed = contentState === 'closed'
+
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <Link to={`/student/spaces/${spaceId}`}
@@ -229,6 +252,16 @@ export default function StudentContentPage() {
       {content.type === 'note' && (
         <div className="card p-6">
           <RichTextRenderer html={content.body} />
+        </div>
+      )}
+
+      {/* Closed banner */}
+      {isClosed && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2 text-sm text-red-700">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          Submissions closed — this {content.type} ended {formatDateTime(content.available_until)}
         </div>
       )}
 
@@ -353,11 +386,32 @@ export default function StudentContentPage() {
                   ))}
                 </div>
               )}
-              {submission.status === 'graded' && submission.score != null && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <p className="text-sm font-medium text-gray-700">Score: <span className={submission.score >= 70 ? 'text-green-600' : 'text-amber-600'}>{submission.score}%</span></p>
+              {submission.status === 'graded' && submission.score != null ? (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${submission.score >= 70 ? 'bg-green-50' : submission.score >= 50 ? 'bg-amber-50' : 'bg-red-50'}`}>
+                      <span className={`text-xl font-bold ${submission.score >= 70 ? 'text-green-600' : submission.score >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
+                        {submission.score}%
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {submission.score >= 70 ? 'Great work! 🎉' : submission.score >= 50 ? 'Good effort 👍' : 'Keep practising 💪'}
+                      </p>
+                      <p className={`text-xs mt-0.5 ${submission.score >= 70 ? 'text-green-600' : submission.score >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
+                        {submission.score >= 70 ? 'Passed' : submission.score >= 50 ? 'Needs improvement' : 'Below passing (70%)'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
+              ) : submission.status === 'submitted' ? (
+                <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2 text-sm text-gray-500">
+                  <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  Awaiting grade from your teacher
+                </div>
+              ) : null}
             </div>
           ) : (
             <>
@@ -372,7 +426,7 @@ export default function StudentContentPage() {
                 <label className="label">Attach files <span className="text-gray-400 font-normal">(PDF, Word, images — max 10MB each)</span></label>
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 transition-colors">
+                  className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 active:bg-brand-50 transition-colors">
                   <svg className="w-8 h-8 text-gray-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>

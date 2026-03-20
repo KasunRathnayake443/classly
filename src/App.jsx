@@ -25,6 +25,7 @@ import JoinSpacePage from './components/student/JoinSpacePage'
 import StudentSpacePage from './components/student/StudentSpacePage'
 import StudentContentPage from './components/student/StudentContentPage'
 import NotificationsPage from './pages/NotificationsPage'
+import StudentGradesPage from './pages/StudentGradesPage'
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -103,10 +104,10 @@ export default function App() {
         <Route path="spaces/:spaceId" element={<StudentSpacePage />} />
         <Route path="spaces/:spaceId/content/:contentId" element={<StudentContentPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="grades" element={<StudentGradesPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="upgrade" element={<UpgradePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
       </Route>
 
       {/* Hidden admin panel */}

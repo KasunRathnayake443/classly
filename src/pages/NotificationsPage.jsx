@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 
@@ -11,20 +12,134 @@ function timeAgo(date) {
   return new Date(date).toLocaleDateString()
 }
 
+function timeUntil(date) {
+  const diff = new Date(date) - new Date()
+  if (diff <= 0) return 'overdue'
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  if (hours < 1) return 'less than 1 hour'
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  return `${days}d`
+}
+
 export default function NotificationsPage() {
   const { user, profile } = useAuth()
-  const [items, setItems] = useState([])        // merged space + admin announcements
+  const [items, setItems] = useState([])
+  const [reminders, setReminders] = useState([])  // due date reminders (students only)
   const [reads, setReads] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
 
   useEffect(() => { fetchAll() }, [])
 
+  // Auto-dismiss reminders when page is visited — clear the badge
+  useEffect(() => {
+    if (!user) return
+    const key = `skooly_reminder_dismissed_${user.id}`
+    const dismissed = JSON.parse(localStorage.getItem(key) || '[]')
+    // We'll save current reminder IDs after fetch completes
+  }, [user])
+
   async function fetchAll() {
     const now = new Date().toISOString()
     const isTeacher = profile?.role === 'teacher'
 
-    // ── Space announcements (only for students) ─────────────────────────────
+    // ── Due date reminders (students only) ───────────────────────────────────
+    let dueReminders = []
+    if (!isTeacher) {
+      const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+      // Get enrolled spaces
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('space_id, spaces(name)')
+        .eq('student_id', user.id)
+        .eq('status', 'active')
+
+      const spaceIds = (enrollments || []).map(e => e.space_id)
+      const spaceMap = Object.fromEntries((enrollments || []).map(e => [e.space_id, e.spaces?.name]))
+
+      if (spaceIds.length > 0) {
+        // Get content due within 24 hours that student hasn't submitted
+        const { data: dueContent } = await supabase
+          .from('content')
+          .select('id, title, type, due_at, space_id')
+          .in('space_id', spaceIds)
+          .in('type', ['assignment', 'quiz'])
+          .gte('due_at', now)
+          .lte('due_at', in24h)
+          .order('due_at', { ascending: true })
+
+        if (dueContent?.length > 0) {
+          // Check which ones student already submitted
+          const { data: submissions } = await supabase
+            .from('submissions')
+            .select('content_id')
+            .eq('student_id', user.id)
+            .in('content_id', dueContent.map(c => c.id))
+
+          const submittedIds = new Set((submissions || []).map(s => s.content_id))
+
+          dueReminders = dueContent
+            .filter(c => !submittedIds.has(c.id))
+            .map(c => ({
+              id: `reminder-${c.id}`,
+              _type: 'reminder',
+              _contentId: c.id,
+              _spaceId: c.space_id,
+              title: `${c.type === 'quiz' ? 'Quiz' : 'Assignment'} due soon: ${c.title}`,
+              body: `Due in ${timeUntil(c.due_at)} · ${spaceMap[c.space_id] || 'Class'}`,
+              due_at: c.due_at,
+              created_at: c.due_at,
+              _source: spaceMap[c.space_id] || 'Class',
+              is_pinned: false,
+            }))
+        }
+      }
+    }
+    setReminders(dueReminders)
+
+    // Mark all current reminders as "seen" so the badge clears after visiting this page
+    if (dueReminders.length > 0) {
+      const key = `skooly_reminder_dismissed_${user.id}`
+      const dismissed = JSON.parse(localStorage.getItem(key) || '[]')
+      const newIds = dueReminders.map(r => r.id).filter(id => !dismissed.includes(id))
+      if (newIds.length > 0) {
+        localStorage.setItem(key, JSON.stringify([...dismissed, ...newIds]))
+      }
+    }
+
+    // ── Content notifications (new content published) ─────────────────────
+    // These are separate from due reminders — they notify when new content is added
+
+
+    // ── New content notifications (students only) ──────────────────────────
+    let contentNotifItems = []
+    if (!isTeacher) {
+      const { data: contentNotifs } = await supabase
+        .from('content_notifications')
+        .select('*, content(id, title, type, space_id, available_from, spaces(name))')
+        .eq('student_id', user.id)
+        .order('notified_at', { ascending: false })
+        .limit(20)
+
+      contentNotifItems = (contentNotifs || [])
+        .filter(n => n.content) // content not deleted
+        .map(n => ({
+          id: `content-notif-${n.id}`,
+          _notifId: n.id,
+          _type: 'content_notif',
+          _contentId: n.content.id,
+          _spaceId: n.content.space_id,
+          title: `New ${n.content.type}: ${n.content.title}`,
+          body: null,
+          created_at: n.notified_at,
+          _source: n.content.spaces?.name || 'Class',
+          is_pinned: false,
+        }))
+    }
+
+    // ── Space announcements (students only) ──────────────────────────────────
     let spaceItems = []
     if (!isTeacher) {
       const { data: spaceAnnouncements } = await supabase
@@ -40,7 +155,7 @@ export default function NotificationsPage() {
       }))
     }
 
-    // ── Admin announcements (for everyone, filtered by target) ───────────────
+    // ── Admin announcements ──────────────────────────────────────────────────
     const { data: adminAnnouncements } = await supabase
       .from('admin_announcements')
       .select('*')
@@ -48,7 +163,6 @@ export default function NotificationsPage() {
 
     const planSlug = profile?.plan || 'free'
     const role = profile?.role || 'student'
-
     const relevantAdmin = (adminAnnouncements || []).filter(a => {
       if (a.target === 'all') return true
       if (a.target === 'teachers' && role === 'teacher') return true
@@ -62,45 +176,46 @@ export default function NotificationsPage() {
       is_pinned: false,
     }))
 
-    const merged = [...spaceItems, ...relevantAdmin]
-      .sort((a, b) => {
-        if (a.is_pinned && !b.is_pinned) return -1
-        if (!a.is_pinned && b.is_pinned) return 1
-        return new Date(b.created_at) - new Date(a.created_at)
-      })
-
+    const merged = [...contentNotifItems, ...spaceItems, ...relevantAdmin].sort((a, b) => {
+      if (a.is_pinned && !b.is_pinned) return -1
+      if (!a.is_pinned && b.is_pinned) return 1
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
     setItems(merged)
 
     // ── Read status ──────────────────────────────────────────────────────────
-    const spaceIds = spaceItems.map(a => a.id)
+    const spaceIds2 = spaceItems.map(a => a.id)
     const adminIds = relevantAdmin.map(a => a.id)
     const readSet = new Set()
-
-    if (spaceIds.length > 0) {
+    if (spaceIds2.length > 0) {
       const { data: spaceReads } = await supabase
-        .from('announcement_reads')
-        .select('announcement_id')
-        .eq('student_id', user.id)
-        .in('announcement_id', spaceIds)
+        .from('announcement_reads').select('announcement_id')
+        .eq('student_id', user.id).in('announcement_id', spaceIds2)
       ;(spaceReads || []).forEach(r => readSet.add(r.announcement_id))
     }
-
     if (adminIds.length > 0) {
       const { data: adminReads } = await supabase
-        .from('admin_announcement_reads')
-        .select('announcement_id')
-        .eq('user_id', user.id)
-        .in('announcement_id', adminIds)
+        .from('admin_announcement_reads').select('announcement_id')
+        .eq('user_id', user.id).in('announcement_id', adminIds)
       ;(adminReads || []).forEach(r => readSet.add(r.announcement_id))
     }
+    // Content notifications — track read state locally using localStorage key
+    const contentNotifReadKey = `skooly_content_notif_reads_${user.id}`
+    const savedReads = JSON.parse(localStorage.getItem(contentNotifReadKey) || '[]')
+    savedReads.forEach(id => readSet.add(id))
 
     setReads(readSet)
     setLoading(false)
   }
 
   async function markRead(item) {
+    if (item._type === 'reminder') return
     if (reads.has(item.id)) return
-    if (item._type === 'space') {
+    if (item._type === 'content_notif') {
+      const key = `skooly_content_notif_reads_${user.id}`
+      const saved = JSON.parse(localStorage.getItem(key) || '[]')
+      localStorage.setItem(key, JSON.stringify([...saved, item.id]))
+    } else if (item._type === 'space') {
       await supabase.from('announcement_reads').insert({ announcement_id: item.id, student_id: user.id })
     } else {
       await supabase.from('admin_announcement_reads').insert({ announcement_id: item.id, user_id: user.id })
@@ -109,7 +224,12 @@ export default function NotificationsPage() {
   }
 
   async function markUnread(item) {
-    if (item._type === 'space') {
+    if (item._type === 'reminder') return
+    if (item._type === 'content_notif') {
+      const key = `skooly_content_notif_reads_${user.id}`
+      const saved = JSON.parse(localStorage.getItem(key) || '[]')
+      localStorage.setItem(key, JSON.stringify(saved.filter(id => id !== item.id)))
+    } else if (item._type === 'space') {
       await supabase.from('announcement_reads').delete().eq('announcement_id', item.id).eq('student_id', user.id)
     } else {
       await supabase.from('admin_announcement_reads').delete().eq('announcement_id', item.id).eq('user_id', user.id)
@@ -132,8 +252,12 @@ export default function NotificationsPage() {
     setReads(new Set(items.map(a => a.id)))
   }
 
-  const displayed = filter === 'unread' ? items.filter(a => !reads.has(a.id)) : items
-  const unreadCount = items.filter(a => !reads.has(a.id)).length
+  // Combine reminders + items for display
+  const allItems = [...reminders, ...items]
+  const unreadCount = items.filter(a => !reads.has(a.id)).length + reminders.length
+  const displayed = filter === 'unread'
+    ? [...reminders, ...items.filter(a => !reads.has(a.id))]
+    : allItems
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto animate-fade-in">
@@ -141,7 +265,7 @@ export default function NotificationsPage() {
         <div>
           <h1 className="page-title">Notifications</h1>
           <p className="page-subtitle">
-            {profile?.role === 'teacher' ? 'Updates from Skooly' : 'Announcements from your classes and Skooly'}
+            {profile?.role === 'teacher' ? 'Updates from Skooly' : 'Reminders and announcements from your classes'}
           </p>
         </div>
         {unreadCount > 0 && (
@@ -152,7 +276,7 @@ export default function NotificationsPage() {
       {/* Filter tabs */}
       <div className="flex gap-1 border-b border-gray-100 mb-4">
         {[
-          { key: 'all', label: `All (${items.length})` },
+          { key: 'all', label: `All (${allItems.length})` },
           { key: 'unread', label: `Unread${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
         ].map(t => (
           <button key={t.key} onClick={() => setFilter(t.key)}
@@ -182,25 +306,39 @@ export default function NotificationsPage() {
             {filter === 'unread' ? 'All caught up!' : 'No notifications yet'}
           </p>
           <p className="text-sm text-gray-400">
-            {filter === 'unread' ? 'No unread notifications.' : 'Announcements from your teachers and Skooly will appear here.'}
+            {filter === 'unread' ? 'No unread notifications.' : 'Announcements and reminders will appear here.'}
           </p>
         </div>
       ) : (
         <div className="space-y-2">
           {displayed.map(item => {
-            const isRead = reads.has(item.id)
+            const isRead = item._type === 'reminder' ? false : reads.has(item.id)
+            const isReminder = item._type === 'reminder'
             const isAdmin = item._type === 'admin'
+            const isOverdue = isReminder && new Date(item.due_at) < new Date()
+
             return (
               <div key={item.id}
-                className={`card p-4 cursor-pointer transition-all ${!isRead ? 'border-brand-200 bg-brand-50/30' : ''}`}
-                onClick={() => markRead(item)}>
+                className={`card p-4 transition-all ${
+                  isReminder
+                    ? isOverdue ? 'border-red-200 bg-red-50/30' : 'border-amber-200 bg-amber-50/30'
+                    : !isRead ? 'border-brand-200 bg-brand-50/30' : ''
+                } ${!isReminder ? 'cursor-pointer' : ''}`}
+                onClick={() => !isReminder && markRead(item)}>
                 <div className="flex items-start gap-3">
+                  {/* Left indicator */}
                   <div className="flex-shrink-0 mt-1.5">
-                    {!isRead
-                      ? <div className="w-2 h-2 rounded-full bg-brand-500" />
-                      : <div className="w-2 h-2" />}
+                    {isReminder ? (
+                      <div className={`w-2 h-2 rounded-full ${isOverdue ? 'bg-red-500' : 'bg-amber-500'}`} />
+                    ) : !isRead ? (
+                      <div className="w-2 h-2 rounded-full bg-brand-500" />
+                    ) : (
+                      <div className="w-2 h-2" />
+                    )}
                   </div>
+
                   <div className="flex-1 min-w-0">
+                    {/* Source badge */}
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">
                       {item.is_pinned && (
                         <span className="badge badge-amber gap-1 text-xs">
@@ -210,23 +348,63 @@ export default function NotificationsPage() {
                           Pinned
                         </span>
                       )}
-                      <span className={`badge text-xs ${isAdmin ? 'badge-purple' : 'badge-gray'}`}>
+                      {isReminder && (
+                        <span className={`badge text-xs gap-1 ${isOverdue ? 'badge-red' : 'badge-amber'}`}>
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                          </svg>
+                          {isOverdue ? 'Overdue' : 'Due soon'}
+                        </span>
+                      )}
+                      <span className={`badge text-xs ${isAdmin ? 'badge-purple' : isReminder ? 'badge-gray' : item._type === 'content_notif' ? 'badge-green' : 'badge-gray'}`}>
                         {item._source}
                       </span>
                     </div>
-                    <p className={`text-sm font-semibold ${!isRead ? 'text-gray-900' : 'text-gray-700'}`}>
+
+                    {/* Title */}
+                    <p className={`text-sm font-semibold ${!isRead || isReminder ? 'text-gray-900' : 'text-gray-700'}`}>
                       {item.title}
                     </p>
+
+                    {/* Body */}
                     {item.body && (
                       <p className="text-sm text-gray-500 mt-1 whitespace-pre-wrap">{item.body}</p>
                     )}
+
+                    {/* Footer row */}
                     <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-gray-400">{timeAgo(item.created_at)}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); isRead ? markUnread(item) : markRead(item) }}
-                        className="text-xs text-brand-500 hover:underline ml-auto">
-                        {isRead ? 'Mark unread' : 'Mark read'}
-                      </button>
+                      {item._type === 'content_notif' ? (
+                        <>
+                          <span className="text-xs text-gray-400">{new Date(item.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                          <Link
+                            to={`/student/spaces/${item._spaceId}/content/${item._contentId}`}
+                            className="ml-auto text-xs font-semibold text-brand-500 hover:underline"
+                            onClick={e => { e.stopPropagation(); markRead(item) }}>
+                            Open →
+                          </Link>
+                        </>
+                    ) : isReminder ? (
+                        <>
+                          <span className="text-xs text-gray-400">
+                            Due {new Date(item.due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                          </span>
+                          <Link
+                            to={`/student/spaces/${item._spaceId}/content/${item._contentId}`}
+                            className="ml-auto text-xs font-semibold text-brand-500 hover:underline"
+                            onClick={e => e.stopPropagation()}>
+                            Go to {item.title.includes('Quiz') ? 'quiz' : 'assignment'} →
+                          </Link>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xs text-gray-400">{timeAgo(item.created_at)}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); isRead ? markUnread(item) : markRead(item) }}
+                            className="text-xs text-brand-500 hover:underline ml-auto">
+                            {isRead ? 'Mark unread' : 'Mark read'}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

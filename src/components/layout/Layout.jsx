@@ -226,21 +226,29 @@ export default function Layout() {
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile topbar */}
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 flex-shrink-0">
+        <div className="lg:hidden flex items-center gap-2 px-4 py-3 bg-white border-b border-gray-100 flex-shrink-0">
           <button onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-xl hover:bg-gray-100 text-gray-600 transition-colors">
+            className="p-2 rounded-xl hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-brand-500 rounded-md flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-              </svg>
-            </div>
-            <span className="font-semibold text-gray-900 text-sm">Skooly</span>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <img src="/logo.png" alt="Skooly" className="w-6 h-6 rounded-md object-cover flex-shrink-0" />
+            <span className="font-semibold text-gray-900 text-sm truncate">Skooly</span>
           </div>
+          {/* Quick actions on mobile topbar */}
+          <NavLink to="/teacher/notifications"
+            className={({ isActive }) => `relative p-2 rounded-xl transition-colors flex-shrink-0 ${isActive ? 'text-brand-500' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </NavLink>
         </div>
 
         <main className="flex-1 overflow-y-auto">

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import RichTextRenderer from '../components/ui/RichTextRenderer'
 import RichTextEditor from '../components/ui/RichTextEditor'
+import { getContentState, getContentStateLabel, formatDateTime } from '../lib/contentState'
 
 function FileIcon({ ext }) {
   if (ext === 'pdf') return (
@@ -338,7 +339,7 @@ export default function ContentPage() {
   if (!content) return <div className="p-6 text-sm text-red-500">Content not found.</div>
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fade-in">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto animate-fade-in pb-8">
       <Link to={`/teacher/spaces/${spaceId}`}
         className="text-sm text-gray-400 hover:text-brand-500 flex items-center gap-1 mb-4">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -348,12 +349,24 @@ export default function ContentPage() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <span className="badge badge-gray mb-1">{content.type}</span>
-          {!editing && <h1 className="text-xl font-semibold text-gray-900 mt-1">{content.title}</h1>}
+          {!editing && <h1 className="text-lg sm:text-xl font-semibold text-gray-900 mt-1 break-words">{content.title}</h1>}
           {!editing && content.due_at && (
             <p className="text-sm text-gray-400 mt-1">Due {new Date(content.due_at).toLocaleString()}</p>
+          )}
+          {!editing && (content.available_from || content.available_until) && (
+            <div className="flex items-center gap-2 mt-1">
+              {(() => {
+                const state = getContentState(content)
+                return (
+                  <span className={`badge text-xs ${state === 'scheduled' ? 'badge-blue' : state === 'closed' ? 'badge-red' : 'badge-green'}`}>
+                    {state === 'scheduled' ? `Opens ${formatDateTime(content.available_from)}` : state === 'closed' ? `Closed ${formatDateTime(content.available_until)}` : `Closes ${formatDateTime(content.available_until)}`}
+                  </span>
+                )
+              })()}
+            </div>
           )}
         </div>
         {/* Edit toggle button */}

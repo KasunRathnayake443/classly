@@ -6,6 +6,7 @@ import AnnouncementModal from '../components/ui/AnnouncementModal'
 import { UpgradeBanner, UpgradeModal } from '../components/ui/UpgradePrompt'
 import { useAuth } from '../hooks/useAuth'
 import { getPlanLimits } from '../lib/planEngine'
+import { getContentState, getContentStateLabel } from '../lib/contentState'
 
 const TYPE_STYLES = {
   note:       { label: 'Note',       bg: 'bg-green-50',  text: 'text-green-700' },
@@ -50,7 +51,7 @@ function ProgressTab({ students, content, spaceId }) {
       }
       const { data } = await supabase
         .from('submissions')
-        .select('student_id, content_id, score, status')
+        .select('student_id, content_id, score, status, submitted_at')
         .in('content_id', scoreable.map(c => c.id))
       setSubmissions(data || [])
       setLoading(false)
@@ -72,10 +73,9 @@ function ProgressTab({ students, content, spaceId }) {
     return Math.round((done / scoreable.length) * 100)
   }
 
-  // Calculate average score per student (quizzes only)
+  // Calculate average score per student (quizzes + graded assignments)
   function studentAvgScore(studentId) {
-    const quizzes = scoreable.filter(c => c.type === 'quiz')
-    const graded = quizzes.filter(c => submissionMap[studentId]?.[c.id]?.score != null)
+    const graded = scoreable.filter(c => submissionMap[studentId]?.[c.id]?.score != null)
     if (graded.length === 0) return null
     const total = graded.reduce((sum, c) => sum + submissionMap[studentId][c.id].score, 0)
     return Math.round(total / graded.length)
@@ -114,7 +114,7 @@ function ProgressTab({ students, content, spaceId }) {
           </p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 mb-1">Avg. quiz score</p>
+          <p className="text-xs text-gray-500 mb-1">Avg. score</p>
           {(() => {
             const scores = students.map(s => studentAvgScore(s.profiles.id)).filter(s => s != null)
             return <p className="text-2xl font-semibold text-gray-900">
@@ -188,18 +188,25 @@ function ProgressTab({ students, content, spaceId }) {
                         <td key={c.id} className="px-3 py-3 text-center">
                           {sub ? (
                             <div className="flex flex-col items-center gap-0.5">
-                              {c.type === 'quiz' && sub.score != null ? (
+                              {sub.score != null ? (
                                 <span className={`text-xs font-semibold ${sub.score >= 70 ? 'text-green-600' : 'text-red-500'}`}>
                                   {sub.score}%
                                 </span>
                               ) : (
-                                <svg className="w-4 h-4 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <svg className="w-4 h-4 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  {c.type === 'assignment' && (
+                                    <span className="text-xs text-gray-400">No grade</span>
+                                  )}
+                                </div>
                               )}
-                              <span className="text-xs text-gray-400">
-                                {new Date(sub.submitted_at || sub.created_at).toLocaleDateString()}
-                              </span>
+                              {sub.submitted_at && (
+                                <span className="text-xs text-gray-400">
+                                  {new Date(sub.submitted_at).toLocaleDateString()}
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <span className="text-gray-200 text-lg">—</span>
@@ -361,6 +368,162 @@ function AnnouncementCard({ a, onPin, onDelete, isScheduled }) {
   )
 }
 
+
+// ── Settings Tab ─────────────────────────────────────────────────────────────
+function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }) {
+  const [name, setName] = useState(space.name)
+  const [subject, setSubject] = useState(space.subject || '')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+  const [joinCode, setJoinCode] = useState(space.join_code)
+
+  async function saveSettings() {
+    if (!name.trim()) { setMsg({ type: 'error', text: 'Space name is required.' }); return }
+    setSaving(true); setMsg(null)
+    const { error } = await supabase
+      .from('spaces')
+      .update({ name: name.trim(), subject: subject.trim() || null, join_mode: joinMode })
+      .eq('id', space.id)
+    if (error) { setMsg({ type: 'error', text: error.message }); setSaving(false); return }
+    const updated = { ...space, name: name.trim(), subject: subject.trim() || null, join_mode: joinMode }
+    onUpdated(updated)
+    onJoinModeChange(joinMode)
+    setMsg({ type: 'success', text: 'Settings saved.' })
+    setSaving(false)
+  }
+
+  async function regenerateCode() {
+    setRegenerating(true)
+    const prefix = (subject || name).slice(0, 3).toUpperCase()
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    const rand = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    const newCode = `${prefix}-${rand}`
+    const { error } = await supabase.from('spaces').update({ join_code: newCode }).eq('id', space.id)
+    if (!error) {
+      setJoinCode(newCode)
+      onUpdated({ ...space, join_code: newCode })
+      setMsg({ type: 'success', text: 'Join code regenerated.' })
+    }
+    setRegenerating(false)
+  }
+
+  async function deleteSpace() {
+    setDeleting(true)
+    await supabase.from('spaces').delete().eq('id', space.id)
+    onDeleted()
+  }
+
+  return (
+    <div className="max-w-lg space-y-5 animate-fade-in">
+      {msg && (
+        <div className={`p-3 rounded-xl text-sm ${msg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* General settings */}
+      <div className="card p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">General</h3>
+        <div>
+          <label className="label">Space name</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Year 10 Biology" />
+        </div>
+        <div>
+          <label className="label">Subject <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input className="input" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Biology, Maths, History" />
+        </div>
+        <button onClick={saveSettings} disabled={saving} className="btn btn-primary text-sm">
+          {saving ? 'Saving...' : 'Save changes'}
+        </button>
+      </div>
+
+      {/* Join settings */}
+      <div className="card p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Joining</h3>
+
+        {/* Join mode */}
+        <div>
+          <label className="label">Join mode</label>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { value: 'open', label: 'Open', desc: 'Anyone with the code joins instantly' },
+              { value: 'approval', label: 'Approval required', desc: 'You approve each student manually' },
+            ].map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => onJoinModeChange(opt.value)}
+                className={`text-left p-3.5 rounded-xl border-2 transition-all ${joinMode === opt.value ? 'border-brand-500 bg-brand-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                <p className={`text-sm font-semibold mb-1 ${joinMode === opt.value ? 'text-brand-600' : 'text-gray-800'}`}>{opt.label}</p>
+                <p className="text-xs text-gray-400 leading-snug">{opt.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Join code */}
+        <div>
+          <label className="label">Join code</label>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl font-mono text-sm font-semibold text-gray-800 tracking-widest">
+              {joinCode}
+            </div>
+            <button onClick={regenerateCode} disabled={regenerating}
+              className="btn btn-secondary text-sm gap-1.5 flex-shrink-0">
+              <svg className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {regenerating ? 'Generating...' : 'Regenerate'}
+            </button>
+          </div>
+          <p className="mt-1.5 text-xs text-gray-400">Regenerating invalidates the old code — students with the old code won't be able to join.</p>
+        </div>
+
+        <button onClick={saveSettings} disabled={saving} className="btn btn-primary text-sm">
+          {saving ? 'Saving...' : 'Save changes'}
+        </button>
+      </div>
+
+      {/* Danger zone */}
+      <div className="card p-5 border-red-100">
+        <h3 className="text-sm font-semibold text-red-600 mb-3">Danger zone</h3>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-800">Delete this space</p>
+            <p className="text-xs text-gray-400 mt-0.5">Permanently removes all content, quizzes, submissions and enrollments. Cannot be undone.</p>
+          </div>
+          <button onClick={() => setConfirmDelete(true)}
+            className="btn btn-danger text-sm flex-shrink-0">
+            Delete space
+          </button>
+        </div>
+      </div>
+
+      {/* Delete confirm */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h2 className="text-base font-semibold text-gray-900 text-center mb-1">Delete "{space.name}"?</h2>
+            <p className="text-sm text-gray-500 text-center mb-6">This will permanently remove all content, quizzes, and student data. This cannot be undone.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="btn btn-secondary flex-1">Cancel</button>
+              <button onClick={deleteSpace} disabled={deleting} className="btn btn-danger flex-1">
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SpacePage() {
   const { spaceId } = useParams()
   const navigate = useNavigate()
@@ -509,7 +672,26 @@ export default function SpacePage() {
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
   if (!space) return <div className="p-6 text-sm text-red-500">Space not found.</div>
 
-  // Check if this space is locked (free plan, space is beyond first 3)
+  // Check admin lock first — blocks everything
+  if (space?.is_locked) {
+    return (
+      <div className="p-6 max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">This space has been locked</h2>
+        <p className="text-sm text-gray-500 mb-2">
+          {space.lock_reason || 'This space has been locked by an administrator.'}
+        </p>
+        <p className="text-sm text-gray-400 mb-6">Please contact the Skooly admin team to resolve this.</p>
+        <Link to="/teacher" className="btn btn-secondary">Back to dashboard</Link>
+      </div>
+    )
+  }
+
+  // Check plan lock (free plan, beyond space limit)
   if (spaceIsLocked) {
     return (
       <div className="p-6 max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -519,9 +701,9 @@ export default function SpacePage() {
           </svg>
         </div>
         <h2 className="text-lg font-semibold text-gray-800 mb-2">This space is locked</h2>
-        <p className="text-sm text-gray-500 mb-6">You've exceeded the free plan limit of 3 spaces. Upgrade to Premium to unlock all your spaces, or delete this one.</p>
+        <p className="text-sm text-gray-500 mb-6">You've exceeded your plan's space limit. Upgrade to unlock all your spaces.</p>
         <div className="flex gap-3">
-          <Link to="/teacher/upgrade" className="btn btn-primary">Upgrade to Premium</Link>
+          <Link to="/teacher/upgrade" className="btn btn-primary">Upgrade plan</Link>
           <Link to="/teacher/subscription" className="btn btn-secondary">Manage subscription</Link>
         </div>
       </div>
@@ -534,52 +716,56 @@ export default function SpacePage() {
     { key: 'announcements', label: `Announcements (${announcements.length})` },
     { key: 'students',      label: `Students (${students.length})` },
     { key: 'pending',       label: pending.length > 0 ? `Pending (${pending.length})` : 'Pending' },
+    { key: 'settings',      label: 'Settings' },
   ]
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto pb-8">
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">{space.name}</h1>
-          {space.subject && <p className="text-sm text-gray-400 mt-0.5">{space.subject}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={copyJoinCode} className="btn btn-secondary text-xs gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            {space.join_code}
-          </button>
-          <button onClick={() => setShowAnnouncement(true)} className="btn btn-secondary text-sm gap-1.5">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-            </svg>
-            Announce
-          </button>
-          <button onClick={async () => {
-            const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-            const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
-            // Content is unlimited for all plans — only spaces and students are limited
-            setShowCreate(true)
-          }} className="btn btn-primary text-sm">
-            + Add content
-          </button>
+      <div className="mb-5">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">{space.name}</h1>
+            {space.subject && <p className="text-sm text-gray-400 mt-0.5">{space.subject}</p>}
+          </div>
+          {/* Delete — icon only, always visible */}
           <button onClick={handleDeleteSpace}
-            className="btn btn-secondary text-sm text-red-500 hover:text-red-700 hover:border-red-200" title="Delete space">
+            className="btn btn-secondary text-sm text-red-400 hover:text-red-600 hover:border-red-200 flex-shrink-0 p-2" title="Delete space">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
         </div>
+        {/* Action row — scrollable on small screens */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          <button onClick={copyJoinCode} className="btn btn-secondary text-xs gap-1.5 flex-shrink-0">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            {space.join_code}
+          </button>
+          <button onClick={() => setShowAnnouncement(true)} className="btn btn-secondary text-sm gap-1.5 flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+            </svg>
+            <span className="hidden sm:inline">Announce</span>
+          </button>
+          <button onClick={async () => {
+            const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
+            const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
+            setShowCreate(true)
+          }} className="btn btn-primary text-sm flex-shrink-0">
+            + Add content
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-100 mb-5">
+      {/* Tabs — scrollable on mobile */}
+      <div className="flex gap-0 border-b border-gray-100 mb-5 overflow-x-auto scrollbar-hide -mx-4 sm:mx-0 px-4 sm:px-0">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px relative ${tab === t.key ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            className={`px-3 sm:px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px relative flex-shrink-0 ${tab === t.key ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {t.label}
             {t.key === 'pending' && pending.length > 0 && (
               <span className="ml-1 w-2 h-2 bg-amber-400 rounded-full inline-block align-middle" />
@@ -597,6 +783,8 @@ export default function SpacePage() {
             </div>
           ) : content.map(item => {
             const style = TYPE_STYLES[item.type] || TYPE_STYLES.note
+            const state = getContentState(item)
+            const stateLabel = getContentStateLabel(item)
             return (
               <div key={item.id} className="card p-4 flex items-center gap-3 group">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${style.bg} ${style.text}`}>
@@ -719,6 +907,17 @@ export default function SpacePage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Settings tab */}
+      {tab === 'settings' && (
+        <SettingsTab
+          space={space}
+          joinMode={space.join_mode || 'open'}
+          onJoinModeChange={(mode) => setSpace(prev => ({ ...prev, join_mode: mode }))}
+          onUpdated={(updated) => { setSpace(updated); refreshSpaces?.() }}
+          onDeleted={() => { refreshSpaces?.(); navigate('/teacher') }}
+        />
       )}
 
       {showUpgrade && (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { getContentState, getContentStateLabel, formatDateTime } from '../../lib/contentState'
 
 const TYPE_STYLES = {
   note:       { label: 'Note',       bg: 'bg-green-50',  text: 'text-green-700' },
@@ -61,6 +62,22 @@ export default function StudentSpacePage() {
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
   if (!space) return <div className="p-6 text-sm text-red-500">Space not found.</div>
 
+  // Admin-locked space — student cannot access
+  if (space.is_locked) {
+    return (
+      <div className="p-6 max-w-md mx-auto flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">This space is temporarily unavailable</h2>
+        <p className="text-sm text-gray-500 mb-6">This class has been locked. Please contact your teacher for more information.</p>
+        <a href="/student" className="btn btn-secondary">Back to my classes</a>
+      </div>
+    )
+  }
+
   const completed = content.filter(c => submissionMap[c.id]).length
 
   return (
@@ -95,29 +112,47 @@ export default function StudentSpacePage() {
         ) : content.map(item => {
           const style = TYPE_STYLES[item.type] || TYPE_STYLES.note
           const sub = submissionMap[item.id]
+          const state = getContentState(item)
+          const stateLabel = getContentStateLabel(item)
+          const isLocked = state === 'scheduled' || state === 'closed'
 
           return (
             <Link
               key={item.id}
               to={`/student/spaces/${spaceId}/content/${item.id}`}
-              className="card p-4 flex items-center gap-3 hover:border-brand-100 hover:shadow-sm transition-all group"
+              className={`card p-4 flex items-center gap-3 transition-all group ${isLocked ? 'opacity-75 hover:border-gray-200' : 'hover:border-brand-100 hover:shadow-sm'}`}
             >
-              <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${style.bg} ${style.text}`}>
-                {style.label}
-              </span>
+              {/* Lock icon for scheduled/closed */}
+              {isLocked ? (
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${state === 'scheduled' ? 'bg-brand-50' : 'bg-gray-100'}`}>
+                  <svg className={`w-4 h-4 ${state === 'scheduled' ? 'text-brand-400' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              ) : (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${style.bg} ${style.text}`}>
+                  {style.label}
+                </span>
+              )}
 
-              <span className="text-sm font-medium text-gray-800 group-hover:text-brand-500 transition-colors flex-1">
-                {item.title}
-              </span>
+              <div className="flex-1 min-w-0">
+                <span className={`text-sm font-medium transition-colors ${isLocked ? 'text-gray-400' : 'text-gray-800 group-hover:text-brand-500'}`}>
+                  {item.title}
+                </span>
+                {stateLabel && (
+                  <p className={`text-xs mt-0.5 ${state === 'scheduled' ? 'text-brand-500' : state === 'closed' ? 'text-red-500' : 'text-amber-600'}`}>
+                    {stateLabel}
+                  </p>
+                )}
+              </div>
 
-              {item.due_at && (
+              {item.due_at && !isLocked && (
                 <span className="text-xs text-gray-400 flex-shrink-0">
                   Due {new Date(item.due_at).toLocaleDateString()}
                 </span>
               )}
 
-              {/* Completion badge */}
-              {sub ? (
+              {!isLocked && (sub ? (
                 <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded flex-shrink-0">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -126,7 +161,7 @@ export default function StudentSpacePage() {
                 </span>
               ) : (
                 <span className="text-xs text-gray-300 flex-shrink-0">Not done</span>
-              )}
+              ))}
 
               <svg className="w-4 h-4 text-gray-300 group-hover:text-brand-400 transition-colors flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
