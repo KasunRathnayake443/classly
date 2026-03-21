@@ -6,15 +6,15 @@ import { useAuth } from '../../hooks/useAuth'
 export default function JoinSpacePage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [code, setCode] = useState(['', '', '', '', '', '', '']) // e.g. ABC-123 = 7 chars
+  const [code, setCode] = useState(['', '', '', '', '', '', '', '']) // e.g. ABC-1234 = 8 chars (3+dash+4)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(null)
   const inputRefs = useRef([])
 
-  // Build the actual code string (strip the dash position)
+  // Build actual code — indices 0,1,2 = prefix, 4,5,6,7 = suffix (index 3 is dash slot, unused)
   function getCodeString() {
-    return code.join('').toUpperCase()
+    return [...code.slice(0,3), ...code.slice(4,8)].join('').toUpperCase()
   }
 
   function handleInput(i, val) {
@@ -24,7 +24,7 @@ export default function JoinSpacePage() {
     setCode(next)
     setError('')
     // Auto-advance — skip index 3 (the dash slot)
-    if (char && i < 6) {
+    if (char && i < 7) {
       const nextIdx = i === 2 ? 4 : i + 1
       inputRefs.current[nextIdx]?.focus()
     }
@@ -44,20 +44,20 @@ export default function JoinSpacePage() {
 
   function handlePaste(e) {
     e.preventDefault()
-    const pasted = e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6)
-    const next = ['', '', '', '', '', '', '']
+    const pasted = e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 7)
+    const next = ['', '', '', '', '', '', '', '']
     pasted.slice(0, 3).split('').forEach((c, i) => next[i] = c)
-    pasted.slice(3, 6).split('').forEach((c, i) => next[i + 4] = c)
+    pasted.slice(3, 7).split('').forEach((c, i) => next[i + 4] = c)
     setCode(next)
-    const lastFilled = pasted.length >= 6 ? 6 : pasted.length >= 3 ? pasted.length + 1 : pasted.length
-    inputRefs.current[Math.min(lastFilled, 6)]?.focus()
+    const lastFilled = pasted.length >= 7 ? 7 : pasted.length >= 3 ? pasted.length + 1 : pasted.length
+    inputRefs.current[Math.min(lastFilled, 7)]?.focus()
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const codeStr = getCodeString().replace(/(.{3})(.{3})/, '$1-$2').slice(0, 7)
-    if (codeStr.replace('-', '').length < 6) {
-      setError('Please enter the full 6-character code.')
+    const codeStr = getCodeString().replace(/(.{3})(.{4})/, '$1-$2')
+    if (codeStr.replace('-', '').length < 7) {
+      setError('Please enter the full join code.')
       return
     }
     setLoading(true)
@@ -110,7 +110,7 @@ export default function JoinSpacePage() {
     )
   }
 
-  const codeComplete = getCodeString().length === 6
+  const codeComplete = getCodeString().length === 7
 
   return (
     <div className="p-4 sm:p-6 max-w-sm mx-auto animate-fade-in">
@@ -145,8 +145,8 @@ export default function JoinSpacePage() {
             ))}
             {/* Dash separator */}
             <span className="text-2xl font-bold text-gray-300 mx-1">—</span>
-            {/* Last 3 digits */}
-            {[4, 5, 6].map(i => (
+            {/* Last 4 digits */}
+            {[4, 5, 6, 7].map(i => (
               <input key={i}
                 ref={el => inputRefs.current[i] = el}
                 type="text" inputMode="text"
@@ -160,7 +160,7 @@ export default function JoinSpacePage() {
               />
             ))}
           </div>
-          <p className="text-center text-xs text-gray-400 mt-2">Format: ABC-123</p>
+          <p className="text-center text-xs text-gray-400 mt-2">Format: ABC-1234</p>
         </div>
 
         {error && (

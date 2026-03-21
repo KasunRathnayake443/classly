@@ -39,7 +39,7 @@ export default function StudentSpacePage() {
     }
 
     const [spaceRes, contentRes, submissionsRes] = await Promise.all([
-      supabase.from('spaces').select('*').eq('id', spaceId).single(),
+      supabase.from('spaces').select('*, profiles(full_name, avatar_url)').eq('id', spaceId).single(),
       supabase.from('content').select('*').eq('space_id', spaceId).order('created_at', { ascending: false }),
       supabase.from('submissions').select('content_id, score, status').eq('student_id', user.id),
     ])
@@ -87,6 +87,45 @@ export default function StudentSpacePage() {
         {space.subject && <p className="text-sm text-gray-400 mt-0.5">{space.subject}</p>}
       </div>
 
+      {/* Class banner */}
+      <div className="rounded-2xl overflow-hidden mb-5 shadow-sm">
+        <div className="h-24 flex items-end px-5 pb-4 relative overflow-hidden"
+          style={space.cover_image_url
+            ? { backgroundImage: `url(${space.cover_image_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { background: space.cover_color || '#4F46E5' }}>
+          {space.cover_image_url && <div className="absolute inset-0 bg-black/30" />}
+          <div className="flex items-end gap-3 w-full relative z-10">
+            <span className="text-4xl drop-shadow">{space.icon || '📚'}</span>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-white font-bold text-xl leading-tight truncate">{space.name}</h1>
+              {space.subject && <p className="text-white/75 text-sm">{space.subject}</p>}
+            </div>
+          </div>
+        </div>
+        {/* Teacher info + description */}
+        <div className="bg-white border border-t-0 border-gray-100 rounded-b-2xl px-5 py-3">
+          <div className="flex items-center gap-2.5">
+            {space.profiles?.avatar_url ? (
+              <img src={space.profiles.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                style={{ background: space.cover_color || '#4F46E5' }}>
+                {(space.teacher_display_name || space.profiles?.full_name || 'T')[0].toUpperCase()}
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-medium text-gray-800">
+                {space.teacher_display_name || space.profiles?.full_name || 'Your teacher'}
+              </p>
+              <p className="text-xs text-gray-400">Teacher</p>
+            </div>
+          </div>
+          {space.description && (
+            <p className="text-sm text-gray-600 mt-2.5 leading-relaxed">{space.description}</p>
+          )}
+        </div>
+      </div>
+
       {/* Progress bar */}
       {scoreable.length > 0 && (
         <div className="card p-4 mb-6">
@@ -107,7 +146,7 @@ export default function StudentSpacePage() {
       <div className="space-y-2">
         {content.length === 0 ? (
           <div className="card p-8 text-center text-sm text-gray-400">
-            No content yet — check back later.
+            No content yet — your teacher will add notes, quizzes and assignments here.
           </div>
         ) : content.map(item => {
           const style = TYPE_STYLES[item.type] || TYPE_STYLES.note

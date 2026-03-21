@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { fetchPlans, daysUntilExpiry, createTransaction, getPlanLimits } from '../lib/planEngine'
+import { fetchPlans, daysUntilExpiry, createTransaction, getPlanLimits, fetchTeacherSubscription } from '../lib/planEngine'
 
 function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel, loading, danger }) {
   return (
@@ -34,6 +34,7 @@ export default function SubscriptionPage() {
   const currentPlan = subscription?.plan
   const currentTxn = subscription?.transaction
   const freePlan = plans.find(p => p.is_free)
+  // getPlanLimits works with the plan object from subscription engine
   const limits = getPlanLimits(currentPlan)
   const days = daysUntilExpiry(currentTxn?.expires_at)
   const isExpiringSoon = days !== null && days <= 7

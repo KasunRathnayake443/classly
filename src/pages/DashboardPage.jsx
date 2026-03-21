@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { fetchTeacherSubscription, getPlanLimits } from '../lib/planEngine'
 import { SkeletonCards } from '../components/ui/LoadingSpinner'
 import EmptyState from '../components/ui/EmptyState'
 
@@ -28,7 +29,7 @@ export default function DashboardPage() {
     // Fetch plan fresh + spaces ordered oldest first (so index matches lock logic)
     const [profileRes, spacesRes] = await Promise.all([
       supabase.from('profiles').select('plan').eq('id', user?.id).single(),
-      supabase.from('spaces').select('id, name, subject, join_code, created_at').order('created_at', { ascending: true }),
+      supabase.from('spaces').select('id, name, subject, join_code, created_at, cover_color, icon, is_locked').order('created_at', { ascending: true }),
     ])
     setPlan(profileRes.data?.plan || 'free')
     const spacesData = spacesRes.data
@@ -36,10 +37,12 @@ export default function DashboardPage() {
     if (error) { setLoading(false); return }
 
     const spaceList = spacesData || []
-    const currentPlan = profileRes.data?.plan || 'free'
-    // Get plan limits from DB
-    const { data: planData } = await supabase.from('plans').select('max_spaces').eq('slug', currentPlan).single()
-    const maxSpaces = planData?.max_spaces === -1 ? Infinity : (planData?.max_spaces || 3)
+
+    // Use subscription engine — reads actual active transaction + plan limits
+    // This correctly handles all plan types (free, pro, enterprise, custom)
+    const { plan: activePlan } = await fetchTeacherSubscription(user?.id)
+    const limits = getPlanLimits(activePlan)
+    const maxSpaces = limits.max_spaces
     const enriched = await Promise.all(spaceList.map(async (space, i) => {
       const [{ count: studentCount }, { count: contentCount }] = await Promise.all([
         supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('space_id', space.id).eq('status', 'active'),
@@ -79,7 +82,7 @@ export default function DashboardPage() {
             </div>
           ))
         ) : [
-          { label: 'Active spaces', value: stats.spaces, color: 'text-brand-500' },
+          { label: 'Active classes', value: stats.spaces, color: 'text-brand-500' },
           { label: 'Total students', value: stats.students, color: 'text-emerald-600' },
           { label: 'Content items', value: stats.content, color: 'text-amber-600' },
         ].map(stat => (
@@ -92,7 +95,7 @@ export default function DashboardPage() {
 
       {/* Spaces */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-gray-900">Your spaces</h2>
+        <h2 className="text-base font-semibold text-gray-900">Your classes</h2>
       </div>
 
       {loading ? (
@@ -105,7 +108,7 @@ export default function DashboardPage() {
             </svg>
           }
           title="No spaces yet"
-          description='Click the + next to "Spaces" in the sidebar to create your first classroom.'
+          description='Click the + next to "Classes" in the sidebar to create your first class.'
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -124,13 +127,13 @@ export default function DashboardPage() {
               )}
 
               <div className={`flex items-start gap-3 ${space.isLocked ? 'mt-7' : ''}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm ${space.isLocked ? 'bg-gray-300' : ''}`}
-                  style={!space.isLocked ? { background: SPACE_COLORS[i % SPACE_COLORS.length] } : {}}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${space.isLocked ? 'bg-gray-200' : ''}`}
+                  style={!space.isLocked ? { background: space.cover_color || SPACE_COLORS[i % SPACE_COLORS.length] } : {}}>
                   {space.isLocked ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
-                  ) : space.name[0].toUpperCase()}
+                  ) : <span className="text-xl">{space.icon || space.name[0].toUpperCase()}</span>}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`font-semibold truncate transition-colors ${space.isLocked ? 'text-gray-400' : 'text-gray-900 group-hover:text-brand-600'}`}>

@@ -107,14 +107,14 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
         {enrollments.length > 0 && (
           <div className="mt-4">
             <div className="px-3 mb-1.5">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My spaces</span>
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My classes</span>
             </div>
             {enrollments.map((e, i) => (
               <NavLink key={e.id} to={`/student/spaces/${e.spaces?.id}`} onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
                 }>
-                <div className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: SPACE_COLORS[i % SPACE_COLORS.length] }} />
+                <span className="text-base leading-none flex-shrink-0">{e.spaces?.icon || "📚"}</span>
                 <span className="truncate">{e.spaces?.name}</span>
               </NavLink>
             ))}
@@ -150,7 +150,7 @@ export default function StudentLayout() {
   async function fetchEnrollments() {
     const { data } = await supabase
       .from('enrollments')
-      .select('id, spaces(id, name, subject)')
+      .select('id, spaces(id, name, subject, icon, cover_color)')
       .eq('student_id', user.id)
       .eq('status', 'active')
       .order('joined_at', { ascending: true })

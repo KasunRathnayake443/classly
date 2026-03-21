@@ -31,7 +31,7 @@ export default function StudentDashboard() {
   async function fetchAll() {
     const { data: enrollData } = await supabase
       .from('enrollments')
-      .select('id, joined_at, status, space_id, spaces(id, name, subject)')
+      .select('id, joined_at, status, space_id, spaces(id, name, subject, cover_color, icon)')
       .eq('student_id', user.id)
       .order('joined_at', { ascending: false })
 
@@ -218,7 +218,7 @@ export default function StudentDashboard() {
               </svg>
             </div>
             <p className="text-sm font-medium text-gray-700 mb-1">No classes yet</p>
-            <p className="text-xs text-gray-400 mb-4">Ask your teacher for a join code</p>
+            <p className="text-xs text-gray-400 mb-4">Ask your teacher for a join code to get started</p>
             <Link to="/student/join" className="btn text-sm" style={{background:'#7c3aed',borderColor:'#7c3aed',color:'#fff'}}>
               Join a class
             </Link>
@@ -228,9 +228,9 @@ export default function StudentDashboard() {
             {active.map((e, i) => (
               <Link key={e.id} to={`/student/spaces/${e.spaces?.id}`}
                 className="card p-4 flex items-center gap-3 hover:border-violet-200 hover:shadow-card-hover transition-all active:scale-98 group">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                  style={{ background: SPACE_COLORS[i % SPACE_COLORS.length] }}>
-                  {e.spaces?.name?.[0]?.toUpperCase()}
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: e.spaces?.cover_color || SPACE_COLORS[i % SPACE_COLORS.length] }}>
+                  <span className="text-xl">{e.spaces?.icon || e.spaces?.name?.[0]?.toUpperCase()}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-violet-600 transition-colors">

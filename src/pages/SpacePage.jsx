@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import CreateContentModal from '../components/content/CreateContentModal'
 import AnnouncementModal from '../components/ui/AnnouncementModal'
 import { UpgradeBanner, UpgradeModal } from '../components/ui/UpgradePrompt'
 import { useAuth } from '../hooks/useAuth'
-import { getPlanLimits } from '../lib/planEngine'
+import { getPlanLimits, fetchTeacherSubscription } from '../lib/planEngine'
 import { getContentState, getContentStateLabel } from '../lib/contentState'
 
 const TYPE_STYLES = {
@@ -370,25 +370,76 @@ function AnnouncementCard({ a, onPin, onDelete, isScheduled }) {
 
 
 // ── Settings Tab ─────────────────────────────────────────────────────────────
+const CLASS_COLORS = ['#4F46E5','#059669','#D97706','#DB2777','#0891B2','#7C3AED','#DC2626','#EA580C','#0D9488','#4338CA','#9333EA','#0284C7']
+const CLASS_ICONS = ['📚','🔬','🧮','🎨','🌍','⚗️','📖','🎭','🏛️','💻','🎵','🏃','🌿','🔭','✏️','🧬']
+
 function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }) {
   const [name, setName] = useState(space.name)
   const [subject, setSubject] = useState(space.subject || '')
+  const [description, setDescription] = useState(space.description || '')
+  const [teacherDisplayName, setTeacherDisplayName] = useState(space.teacher_display_name || '')
+  const [coverColor, setCoverColor] = useState(space.cover_color || '#4F46E5')
+  const [icon, setIcon] = useState(space.icon || '📚')
+  const [coverImageUrl, setCoverImageUrl] = useState(space.cover_image_url || '')
+  const [coverMode, setCoverMode] = useState(space.cover_image_url ? 'image' : 'color')
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [joinCode, setJoinCode] = useState(space.join_code)
+  const imageInputRef = useRef(null)
+
+  async function handleImageUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { setMsg({ type: 'error', text: 'Image must be under 5MB.' }); return }
+    if (!file.type.startsWith('image/')) { setMsg({ type: 'error', text: 'Please select an image file.' }); return }
+    setUploadingImage(true)
+    setMsg(null)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `space-covers/${space.id}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (uploadErr) throw uploadErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = `${urlData.publicUrl}?t=${Date.now()}`
+      setCoverImageUrl(url)
+      setCoverMode('image')
+      setMsg({ type: 'success', text: 'Image uploaded — click Save appearance to apply.' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message || 'Upload failed.' })
+    } finally {
+      setUploadingImage(false)
+    }
+  }
 
   async function saveSettings() {
-    if (!name.trim()) { setMsg({ type: 'error', text: 'Space name is required.' }); return }
+    if (!name.trim()) { setMsg({ type: 'error', text: 'Class name is required.' }); return }
     setSaving(true); setMsg(null)
-    const { error } = await supabase
-      .from('spaces')
-      .update({ name: name.trim(), subject: subject.trim() || null, join_mode: joinMode })
-      .eq('id', space.id)
+    const { error } = await supabase.from('spaces').update({
+      name: name.trim(),
+      subject: subject.trim() || null,
+      description: description.trim() || null,
+      teacher_display_name: teacherDisplayName.trim() || null,
+      cover_color: coverColor,
+      icon,
+      cover_image_url: coverMode === 'image' ? coverImageUrl || null : null,
+      join_mode: joinMode,
+    }).eq('id', space.id)
     if (error) { setMsg({ type: 'error', text: error.message }); setSaving(false); return }
-    const updated = { ...space, name: name.trim(), subject: subject.trim() || null, join_mode: joinMode }
+    const updated = {
+      ...space,
+      name: name.trim(),
+      subject: subject.trim() || null,
+      description: description.trim() || null,
+      teacher_display_name: teacherDisplayName.trim() || null,
+      cover_color: coverColor,
+      icon,
+      cover_image_url: coverMode === 'image' ? coverImageUrl || null : null,
+      join_mode: joinMode,
+    }
     onUpdated(updated)
     onJoinModeChange(joinMode)
     setMsg({ type: 'success', text: 'Settings saved.' })
@@ -402,11 +453,7 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
     const rand = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
     const newCode = `${prefix}-${rand}`
     const { error } = await supabase.from('spaces').update({ join_code: newCode }).eq('id', space.id)
-    if (!error) {
-      setJoinCode(newCode)
-      onUpdated({ ...space, join_code: newCode })
-      setMsg({ type: 'success', text: 'Join code regenerated.' })
-    }
+    if (!error) { setJoinCode(newCode); onUpdated({ ...space, join_code: newCode }); setMsg({ type: 'success', text: 'Join code regenerated.' }) }
     setRegenerating(false)
   }
 
@@ -416,6 +463,11 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
     onDeleted()
   }
 
+  // Live banner preview
+  const bannerBg = coverMode === 'image' && coverImageUrl
+    ? { backgroundImage: `url(${coverImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : { background: coverColor }
+
   return (
     <div className="max-w-lg space-y-5 animate-fade-in">
       {msg && (
@@ -424,27 +476,140 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
         </div>
       )}
 
-      {/* General settings */}
+      {/* Live preview banner */}
+      <div className="h-24 rounded-2xl flex items-end px-5 pb-4 transition-all relative overflow-hidden" style={bannerBg}>
+        {coverMode === 'image' && coverImageUrl && (
+          <div className="absolute inset-0 bg-black/30" />
+        )}
+        <div className="flex items-end gap-3 w-full relative z-10">
+          <span className="text-4xl drop-shadow">{icon}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold text-xl leading-tight truncate drop-shadow">{name || 'Class name'}</p>
+            <p className="text-white/75 text-sm drop-shadow">{subject || 'Subject'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* General */}
       <div className="card p-5 space-y-4">
         <h3 className="text-sm font-semibold text-gray-700">General</h3>
-        <div>
-          <label className="label">Space name</label>
-          <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Year 10 Biology" />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Class name</label>
+            <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Year 10 Biology" />
+          </div>
+          <div>
+            <label className="label">Subject <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input className="input" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Biology" />
+          </div>
         </div>
         <div>
-          <label className="label">Subject <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input className="input" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Biology, Maths, History" />
+          <label className="label">Description <span className="text-gray-400 font-normal">(students see this)</span></label>
+          <textarea className="input resize-none" rows={2} value={description}
+            onChange={e => setDescription(e.target.value)} placeholder="Welcome message or class overview..." />
+        </div>
+        <div>
+          <label className="label">Your display name <span className="text-gray-400 font-normal">(e.g. Mr. Silva)</span></label>
+          <input className="input" value={teacherDisplayName}
+            onChange={e => setTeacherDisplayName(e.target.value)} placeholder="How students see your name in this class" />
         </div>
         <button onClick={saveSettings} disabled={saving} className="btn btn-primary text-sm">
           {saving ? 'Saving...' : 'Save changes'}
         </button>
       </div>
 
-      {/* Join settings */}
+      {/* Appearance */}
+      <div className="card p-5 space-y-5">
+        <h3 className="text-sm font-semibold text-gray-700">Appearance</h3>
+
+        {/* Icon */}
+        <div>
+          <label className="label">Icon</label>
+          <div className="flex flex-wrap gap-2">
+            {CLASS_ICONS.map(ic => (
+              <button key={ic} type="button" onClick={() => setIcon(ic)}
+                className={`w-9 h-9 rounded-xl text-lg flex items-center justify-center transition-all ${icon === ic ? 'ring-2 ring-brand-500 ring-offset-1 scale-110' : 'hover:bg-gray-100'}`}>
+                {ic}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cover mode toggle */}
+        <div>
+          <label className="label">Cover style</label>
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[
+              { key: 'color', label: '🎨 Color', desc: 'Pick a solid color' },
+              { key: 'image', label: '🖼️ Image', desc: 'Upload a photo' },
+            ].map(opt => (
+              <button key={opt.key} type="button" onClick={() => setCoverMode(opt.key)}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${coverMode === opt.key ? 'border-brand-500 bg-brand-50' : 'border-gray-100 hover:border-gray-200'}`}>
+                <p className={`text-sm font-semibold ${coverMode === opt.key ? 'text-brand-600' : 'text-gray-700'}`}>{opt.label}</p>
+                <p className="text-xs text-gray-400">{opt.desc}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Color picker */}
+          {coverMode === 'color' && (
+            <div className="flex flex-wrap gap-2">
+              {CLASS_COLORS.map(color => (
+                <button key={color} type="button" onClick={() => setCoverColor(color)}
+                  className={`w-8 h-8 rounded-full transition-all ${coverColor === color ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105'}`}
+                  style={{ background: color, outlineColor: color }} />
+              ))}
+            </div>
+          )}
+
+          {/* Image upload */}
+          {coverMode === 'image' && (
+            <div className="space-y-3">
+              <div
+                onClick={() => imageInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${coverImageUrl ? 'border-brand-200 bg-brand-50/30' : 'border-gray-200 hover:border-brand-300 hover:bg-brand-50/20'}`}>
+                {coverImageUrl ? (
+                  <div className="space-y-2">
+                    <img src={coverImageUrl} alt="Cover preview" className="h-20 w-full object-cover rounded-lg" />
+                    <p className="text-xs text-brand-600 font-medium">Click to change image</p>
+                  </div>
+                ) : (
+                  <>
+                    <svg className="w-8 h-8 text-gray-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                    </svg>
+                    <p className="text-sm text-gray-500">{uploadingImage ? 'Uploading...' : 'Click to upload cover image'}</p>
+                  </>
+                )}
+              </div>
+              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+
+              {/* Resolution guide */}
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700 space-y-1">
+                <p className="font-semibold">📐 Best image size</p>
+                <p>Recommended: <span className="font-medium">1200 × 300px</span> (4:1 ratio)</p>
+                <p>Minimum: 600 × 150px · Max file size: 5MB</p>
+                <p className="text-blue-500">JPG or PNG works best. The image will be center-cropped to fit the banner.</p>
+              </div>
+
+              {coverImageUrl && (
+                <button type="button" onClick={() => { setCoverImageUrl(''); setCoverMode('color') }}
+                  className="text-xs text-red-400 hover:text-red-600 font-medium">
+                  Remove image — use color instead
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <button onClick={saveSettings} disabled={saving || uploadingImage} className="btn btn-primary text-sm">
+          {saving ? 'Saving...' : 'Save appearance'}
+        </button>
+      </div>
+
+      {/* Joining */}
       <div className="card p-5 space-y-4">
         <h3 className="text-sm font-semibold text-gray-700">Joining</h3>
-
-        {/* Join mode */}
         <div>
           <label className="label">Join mode</label>
           <div className="grid grid-cols-2 gap-3">
@@ -461,25 +626,21 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
             ))}
           </div>
         </div>
-
-        {/* Join code */}
         <div>
           <label className="label">Join code</label>
           <div className="flex items-center gap-2">
             <div className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl font-mono text-sm font-semibold text-gray-800 tracking-widest">
               {joinCode}
             </div>
-            <button onClick={regenerateCode} disabled={regenerating}
-              className="btn btn-secondary text-sm gap-1.5 flex-shrink-0">
+            <button onClick={regenerateCode} disabled={regenerating} className="btn btn-secondary text-sm gap-1.5 flex-shrink-0">
               <svg className={`w-4 h-4 ${regenerating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               {regenerating ? 'Generating...' : 'Regenerate'}
             </button>
           </div>
-          <p className="mt-1.5 text-xs text-gray-400">Regenerating invalidates the old code — students with the old code won't be able to join.</p>
+          <p className="mt-1.5 text-xs text-gray-400">Regenerating invalidates the old code.</p>
         </div>
-
         <button onClick={saveSettings} disabled={saving} className="btn btn-primary text-sm">
           {saving ? 'Saving...' : 'Save changes'}
         </button>
@@ -490,17 +651,13 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
         <h3 className="text-sm font-semibold text-red-600 mb-3">Danger zone</h3>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-800">Delete this space</p>
+            <p className="text-sm font-medium text-gray-800">Delete this class</p>
             <p className="text-xs text-gray-400 mt-0.5">Permanently removes all content, quizzes, submissions and enrollments. Cannot be undone.</p>
           </div>
-          <button onClick={() => setConfirmDelete(true)}
-            className="btn btn-danger text-sm flex-shrink-0">
-            Delete space
-          </button>
+          <button onClick={() => setConfirmDelete(true)} className="btn btn-danger text-sm flex-shrink-0">Delete class</button>
         </div>
       </div>
 
-      {/* Delete confirm */}
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up">
@@ -510,12 +667,10 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
               </svg>
             </div>
             <h2 className="text-base font-semibold text-gray-900 text-center mb-1">Delete "{space.name}"?</h2>
-            <p className="text-sm text-gray-500 text-center mb-6">This will permanently remove all content, quizzes, and student data. This cannot be undone.</p>
+            <p className="text-sm text-gray-500 text-center mb-6">This will permanently remove all content, quizzes, and student data.</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(false)} className="btn btn-secondary flex-1">Cancel</button>
-              <button onClick={deleteSpace} disabled={deleting} className="btn btn-danger flex-1">
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
+              <button onClick={deleteSpace} disabled={deleting} className="btn btn-danger flex-1">{deleting ? 'Deleting...' : 'Delete'}</button>
             </div>
           </div>
         </div>
@@ -582,11 +737,10 @@ export default function SpacePage() {
   }
 
   async function approveStudent(enrollment) {
-    const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-    const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
-    const limits = getPlanLimits(planData)
-    if (students.length >= limits.max_students) {
-      setShowUpgrade({ title: 'Student limit reached', description: `Your ${planData?.name || 'current'} plan allows ${planData?.max_students} students per space. Upgrade to add more.` })
+    const { plan: activePlan } = await fetchTeacherSubscription(user?.id)
+    const limits = getPlanLimits(activePlan)
+    if (limits.max_students !== Infinity && students.length >= limits.max_students) {
+      setShowUpgrade({ title: 'Student limit reached', description: `Your ${activePlan?.name || 'current'} plan allows ${activePlan?.max_students} students per class. Upgrade to add more.` })
       return
     }
     setActionLoading(true)
@@ -640,7 +794,7 @@ export default function SpacePage() {
   async function handleDeleteSpace() {
     setConfirm({
       message: `Delete "${space?.name}"? This will permanently remove all content, quizzes, and student enrollments.`,
-      confirmLabel: 'Delete space',
+      confirmLabel: 'Delete class',
       onConfirm: async () => {
         setActionLoading(true)
         await supabase.from('spaces').delete().eq('id', spaceId)
@@ -650,23 +804,32 @@ export default function SpacePage() {
     })
   }
 
-  // Determine if this space is locked (free plan, not in first 3 spaces)
+  // Determine if this space is plan-locked
+  // Reads actual plan limits from DB — works for all plans including Enterprise
   const [spaceIsLocked, setSpaceIsLocked] = useState(false)
 
   useEffect(() => {
     async function checkLock() {
-      const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-      if (p?.plan === 'premium') { setSpaceIsLocked(false); return }
-      // Get all spaces ordered by created_at to find position
+      if (!user || !spaceId) return
+
+      // Get teacher's current active subscription and plan limits
+      const { transaction, plan } = await fetchTeacherSubscription(user.id)
+      const limits = getPlanLimits(plan)
+
+      // Unlimited spaces — never locked by plan
+      if (limits.max_spaces === Infinity) { setSpaceIsLocked(false); return }
+
+      // Get all spaces ordered by created_at to find this space's position
       const { data: allSpaces } = await supabase
         .from('spaces')
         .select('id')
-        .eq('teacher_id', user?.id)
+        .eq('teacher_id', user.id)
         .order('created_at', { ascending: true })
+
       const idx = (allSpaces || []).findIndex(s => s.id === spaceId)
-      setSpaceIsLocked(idx >= 3)
+      setSpaceIsLocked(idx >= limits.max_spaces)
     }
-    if (user && spaceId) checkLock()
+    checkLock()
   }, [spaceId, user])
 
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
@@ -681,9 +844,9 @@ export default function SpacePage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-gray-800 mb-2">This space has been locked</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">This class has been locked</h2>
         <p className="text-sm text-gray-500 mb-2">
-          {space.lock_reason || 'This space has been locked by an administrator.'}
+          {space.lock_reason || 'This class has been locked by an administrator.'}
         </p>
         <p className="text-sm text-gray-400 mb-6">Please contact the Skooly admin team to resolve this.</p>
         <Link to="/teacher" className="btn btn-secondary">Back to dashboard</Link>
@@ -700,7 +863,7 @@ export default function SpacePage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-gray-800 mb-2">This space is locked</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">This class is locked</h2>
         <p className="text-sm text-gray-500 mb-6">You've exceeded your plan's space limit. Upgrade to unlock all your spaces.</p>
         <div className="flex gap-3">
           <Link to="/teacher/upgrade" className="btn btn-primary">Upgrade plan</Link>
@@ -731,7 +894,7 @@ export default function SpacePage() {
           </div>
           {/* Delete — icon only, always visible */}
           <button onClick={handleDeleteSpace}
-            className="btn btn-secondary text-sm text-red-400 hover:text-red-600 hover:border-red-200 flex-shrink-0 p-2" title="Delete space">
+            className="btn btn-secondary text-sm text-red-400 hover:text-red-600 hover:border-red-200 flex-shrink-0 p-2" title="Delete class">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
