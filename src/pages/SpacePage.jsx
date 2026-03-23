@@ -5,7 +5,7 @@ import CreateContentModal from '../components/content/CreateContentModal'
 import AnnouncementModal from '../components/ui/AnnouncementModal'
 import { UpgradeBanner, UpgradeModal } from '../components/ui/UpgradePrompt'
 import { useAuth } from '../hooks/useAuth'
-import { getPlanLimits, fetchTeacherSubscription } from '../lib/planEngine'
+import { getPlanLimits } from '../lib/planEngine'
 import { getContentState, getContentStateLabel } from '../lib/contentState'
 
 const TYPE_STYLES = {
@@ -679,11 +679,128 @@ function SettingsTab({ space, joinMode, onJoinModeChange, onUpdated, onDeleted }
   )
 }
 
+
+// ── Copy Content Modal ────────────────────────────────────────────────────────
+function CopyContentModal({ item, currentSpaceId, teacherId, onCopy, onClose }) {
+  const [spaces, setSpaces] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState(null) // space name it was copied to
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    async function fetchSpaces() {
+      const { data } = await supabase
+        .from('spaces')
+        .select('id, name, subject, icon, cover_color')
+        .neq('id', currentSpaceId)
+        .order('created_at', { ascending: true })
+      setSpaces(data || [])
+      setLoading(false)
+    }
+    fetchSpaces()
+  }, [])
+
+  async function handleCopy(targetSpace) {
+    setCopying(targetSpace.id)
+    setError('')
+    const result = await onCopy(item, targetSpace.id)
+    if (result.success) {
+      setCopied(targetSpace.name)
+      setCopying(false)
+    } else {
+      setError(result.error || 'Failed to copy.')
+      setCopying(false)
+    }
+  }
+
+  const typeStyle = TYPE_STYLES[item.type] || TYPE_STYLES.note
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm animate-slide-up">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">Copy to another class</h2>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className={`text-xs font-medium px-2 py-0.5 rounded ${typeStyle.bg} ${typeStyle.text}`}>
+                {typeStyle.label}
+              </span>
+              <span className="text-xs text-gray-500 truncate max-w-[200px]">{item.title}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4">
+          {copied ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-800 mb-1">Copied successfully!</p>
+              <p className="text-xs text-gray-500 mb-4">"{item.title} (copy)" added to <span className="font-medium">{copied}</span></p>
+              <button onClick={onClose} className="btn btn-primary text-sm">Done</button>
+            </div>
+          ) : loading ? (
+            <div className="space-y-2 py-2">
+              {[1,2,3].map(i => <div key={i} className="skeleton h-12 rounded-xl"/>)}
+            </div>
+          ) : spaces.length === 0 ? (
+            <div className="text-center py-6">
+              <p className="text-sm text-gray-500 mb-1">No other classes found.</p>
+              <p className="text-xs text-gray-400">Create another class first to copy content into it.</p>
+            </div>
+          ) : (
+            <>
+              {error && <p className="text-xs text-red-600 mb-3 p-2 bg-red-50 rounded-lg">{error}</p>}
+              <p className="text-xs text-gray-500 mb-3">Select a class to copy this {item.type} into:</p>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {spaces.map(space => (
+                  <button key={space.id}
+                    onClick={() => handleCopy(space)}
+                    disabled={!!copying}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-brand-200 hover:bg-brand-50/30 transition-all text-left disabled:opacity-50">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-lg"
+                      style={{ background: space.cover_color || '#4F46E5' }}>
+                      {space.icon || '📚'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{space.name}</p>
+                      <p className="text-xs text-gray-400">{space.subject || 'No subject'}</p>
+                    </div>
+                    {copying === space.id ? (
+                      <svg className="w-4 h-4 text-brand-500 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SpacePage() {
   const { spaceId } = useParams()
   const navigate = useNavigate()
   const { refreshSpaces } = useOutletContext() || {}
-  const { profile, user } = useAuth()
+  const { profile, user, subscription } = useAuth()
 
   const [space, setSpace] = useState(null)
   const [content, setContent] = useState([])
@@ -697,31 +814,22 @@ export default function SpacePage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [confirm, setConfirm] = useState(null)
+  const [search, setSearch] = useState('')
+  const [copyItem, setCopyItem] = useState(null) // item being copied
 
   useEffect(() => { fetchAll() }, [spaceId])
 
   async function fetchAll() {
     setLoading(true)
-    const now = new Date().toISOString()
-    const [spaceRes, contentRes, enrollRes, announcementsRes] = await Promise.all([
-      supabase.from('spaces').select('*').eq('id', spaceId).single(),
-      supabase.from('content').select('*').eq('space_id', spaceId).order('created_at', { ascending: false }),
-      supabase.from('enrollments')
-        .select('id, joined_at, status, profiles(id, full_name, email)')
-        .eq('space_id', spaceId)
-        .order('joined_at', { ascending: true }),
-      supabase.from('announcements')
-        .select('*')
-        .eq('space_id', spaceId)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false }),
-    ])
-    setSpace(spaceRes.data)
-    setContent(contentRes.data || [])
-    const enrollments = enrollRes.data || []
+    // Single RPC replaces 4 parallel queries — one round trip
+    const { data, error } = await supabase.rpc('get_space_data', { p_space_id: spaceId })
+    if (error || !data) { setLoading(false); return }
+    setSpace(data.space)
+    setContent(data.content || [])
+    const enrollments = data.enrollments || []
     setStudents(enrollments.filter(e => e.status === 'active'))
     setPending(enrollments.filter(e => e.status === 'pending'))
-    setAnnouncements(announcementsRes.data || [])
+    setAnnouncements(data.announcements || [])
     setLoading(false)
   }
 
@@ -737,10 +845,9 @@ export default function SpacePage() {
   }
 
   async function approveStudent(enrollment) {
-    const { plan: activePlan } = await fetchTeacherSubscription(user?.id)
-    const limits = getPlanLimits(activePlan)
+    const limits = getPlanLimits(subscription?.plan)
     if (limits.max_students !== Infinity && students.length >= limits.max_students) {
-      setShowUpgrade({ title: 'Student limit reached', description: `Your ${activePlan?.name || 'current'} plan allows ${activePlan?.max_students} students per class. Upgrade to add more.` })
+      setShowUpgrade({ title: 'Student limit reached', description: `Your ${subscription?.plan?.name || 'current'} plan allows ${subscription?.plan?.max_students} students per class. Upgrade to add more.` })
       return
     }
     setActionLoading(true)
@@ -791,6 +898,53 @@ export default function SpacePage() {
     })
   }
 
+  async function handleCopyContent(item) {
+    setCopyItem(item)
+  }
+
+  async function doCopyContent(item, targetSpaceId) {
+    try {
+      // Insert content into target space
+      const { data: newContent, error: contentErr } = await supabase
+        .from('content')
+        .insert({
+          space_id: targetSpaceId,
+          type: item.type,
+          title: item.title + ' (copy)',
+          body: item.body,
+          due_at: null, // don't copy dates
+          available_from: null,
+          available_until: null,
+        })
+        .select().single()
+      if (contentErr) throw contentErr
+
+      // Copy quiz questions if applicable
+      if (item.type === 'quiz') {
+        const { data: questions } = await supabase
+          .from('quiz_questions')
+          .select('*')
+          .eq('content_id', item.id)
+          .order('order_index', { ascending: true })
+        if (questions?.length > 0) {
+          await supabase.from('quiz_questions').insert(
+            questions.map(q => ({
+              content_id: newContent.id,
+              question: q.question,
+              options: q.options,
+              correct_answer: q.correct_answer,
+              order_index: q.order_index,
+            }))
+          )
+        }
+      }
+      setCopyItem(null)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }
+
   async function handleDeleteSpace() {
     setConfirm({
       message: `Delete "${space?.name}"? This will permanently remove all content, quizzes, and student enrollments.`,
@@ -805,21 +959,15 @@ export default function SpacePage() {
   }
 
   // Determine if this space is plan-locked
-  // Reads actual plan limits from DB — works for all plans including Enterprise
+  // Uses subscription already cached in useAuth — zero extra queries
   const [spaceIsLocked, setSpaceIsLocked] = useState(false)
 
   useEffect(() => {
     async function checkLock() {
       if (!user || !spaceId) return
-
-      // Get teacher's current active subscription and plan limits
-      const { transaction, plan } = await fetchTeacherSubscription(user.id)
-      const limits = getPlanLimits(plan)
-
-      // Unlimited spaces — never locked by plan
+      const limits = getPlanLimits(subscription?.plan)
       if (limits.max_spaces === Infinity) { setSpaceIsLocked(false); return }
 
-      // Get all spaces ordered by created_at to find this space's position
       const { data: allSpaces } = await supabase
         .from('spaces')
         .select('id')
@@ -830,7 +978,7 @@ export default function SpacePage() {
       setSpaceIsLocked(idx >= limits.max_spaces)
     }
     checkLock()
-  }, [spaceId, user])
+  }, [spaceId, user, subscription])
 
   if (loading) return <div className="p-6 text-sm text-gray-400">Loading...</div>
   if (!space) return <div className="p-6 text-sm text-red-500">Space not found.</div>
@@ -873,6 +1021,10 @@ export default function SpacePage() {
     )
   }
 
+  const filteredContent = search.trim()
+    ? content.filter(c => c.title.toLowerCase().includes(search.toLowerCase()))
+    : content
+
   const TABS = [
     { key: 'content',       label: `Content (${content.length})` },
     { key: 'progress',      label: 'Progress' },
@@ -914,11 +1066,7 @@ export default function SpacePage() {
             </svg>
             <span className="hidden sm:inline">Announce</span>
           </button>
-          <button onClick={async () => {
-            const { data: p } = await supabase.from('profiles').select('plan').eq('id', user?.id).single()
-            const { data: planData } = await supabase.from('plans').select('*').eq('slug', p?.plan || 'free').single()
-            setShowCreate(true)
-          }} className="btn btn-primary text-sm flex-shrink-0">
+          <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm flex-shrink-0">
             + Add content
           </button>
         </div>
@@ -939,12 +1087,37 @@ export default function SpacePage() {
 
       {/* Content tab */}
       {tab === 'content' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
+          {/* Search bar */}
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input
+              type="text"
+              placeholder="Search content..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input pl-9 pr-9 py-2 text-sm w-full"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
           {content.length === 0 ? (
             <div className="card p-8 text-center text-sm text-gray-400">
               No content yet. Click "Add content" to create notes, quizzes, or assignments.
             </div>
-          ) : content.map(item => {
+          ) : filteredContent.length === 0 ? (
+            <div className="card p-8 text-center text-sm text-gray-400">
+              No content matches "{search}"
+            </div>
+          ) : filteredContent.map(item => {
             const style = TYPE_STYLES[item.type] || TYPE_STYLES.note
             const state = getContentState(item)
             const stateLabel = getContentStateLabel(item)
@@ -962,6 +1135,12 @@ export default function SpacePage() {
                     Due {new Date(item.due_at).toLocaleDateString()}
                   </span>
                 )}
+                <button onClick={() => handleCopyContent(item)} title="Copy to another class"
+                  className="text-gray-300 hover:text-brand-500 transition-colors flex-shrink-0 p-1 rounded">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                  </svg>
+                </button>
                 <button onClick={() => handleDeleteContent(item)}
                   className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0 p-1 rounded">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -971,6 +1150,7 @@ export default function SpacePage() {
               </div>
             )
           })}
+          </div>
         </div>
       )}
 
@@ -1114,6 +1294,16 @@ export default function SpacePage() {
           loading={actionLoading}
           onConfirm={confirm.onConfirm}
           onCancel={() => { setConfirm(null); setActionLoading(false) }}
+        />
+      )}
+
+      {copyItem && (
+        <CopyContentModal
+          item={copyItem}
+          currentSpaceId={spaceId}
+          teacherId={user?.id}
+          onCopy={doCopyContent}
+          onClose={() => setCopyItem(null)}
         />
       )}
     </div>

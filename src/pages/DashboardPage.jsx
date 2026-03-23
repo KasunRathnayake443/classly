@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { fetchTeacherSubscription, getPlanLimits } from '../lib/planEngine'
+import { getPlanLimits } from '../lib/planEngine'
 import { SkeletonCards } from '../components/ui/LoadingSpinner'
 import EmptyState from '../components/ui/EmptyState'
 
@@ -12,12 +12,10 @@ export default function DashboardPage() {
   const { profile, user, subscription } = useAuth()
   const { refreshSpaces, spaceRefreshCount } = useOutletContext() || {}
   const [spaces, setSpaces] = useState([])
-  const [plan, setPlan] = useState('free')
   const [stats, setStats] = useState({ spaces: 0, students: 0, content: 0 })
   const [loading, setLoading] = useState(true)
 
-  // Re-fetch whenever sidebar signals a space was created/deleted
-  useEffect(() => { fetchDashboardData() }, [spaceRefreshCount])
+  useEffect(() => { fetchDashboardData() }, [spaceRefreshCount, subscription])
 
   useEffect(() => {
     function handleFocus() { fetchDashboardData() }
@@ -26,29 +24,24 @@ export default function DashboardPage() {
   }, [])
 
   async function fetchDashboardData() {
-    // Fetch plan fresh + spaces ordered oldest first (so index matches lock logic)
-    const [profileRes, spacesRes] = await Promise.all([
-      supabase.from('profiles').select('plan').eq('id', user?.id).single(),
-      supabase.from('spaces').select('id, name, subject, join_code, created_at, cover_color, icon, is_locked').order('created_at', { ascending: true }),
-    ])
-    setPlan(profileRes.data?.plan || 'free')
-    const spacesData = spacesRes.data
-    const error = spacesRes.error
+    if (!user?.id) return
+
+    // Single RPC call replaces 2+N queries
+    const { data, error } = await supabase.rpc('get_teacher_dashboard', {
+      teacher_id: user.id
+    })
+
     if (error) { setLoading(false); return }
 
-    const spaceList = spacesData || []
-
-    // Use subscription engine — reads actual active transaction + plan limits
-    // This correctly handles all plan types (free, pro, enterprise, custom)
-    const { plan: activePlan } = await fetchTeacherSubscription(user?.id)
-    const limits = getPlanLimits(activePlan)
+    // Get plan limits from already-cached subscription context
+    const limits = getPlanLimits(subscription?.plan)
     const maxSpaces = limits.max_spaces
-    const enriched = await Promise.all(spaceList.map(async (space, i) => {
-      const [{ count: studentCount }, { count: contentCount }] = await Promise.all([
-        supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('space_id', space.id).eq('status', 'active'),
-        supabase.from('content').select('*', { count: 'exact', head: true }).eq('space_id', space.id),
-      ])
-      return { ...space, studentCount: studentCount || 0, contentCount: contentCount || 0, isLocked: space.is_locked || i >= maxSpaces }
+
+    const enriched = (data || []).map((space, i) => ({
+      ...space,
+      studentCount: Number(space.student_count) || 0,
+      contentCount: Number(space.content_count) || 0,
+      isLocked: space.is_locked || i >= maxSpaces,
     }))
 
     setSpaces(enriched)
@@ -66,7 +59,6 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto animate-fade-in pb-8">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="page-title">{greeting}, {firstName} 👋</h1>
         <p className="page-subtitle">Here's an overview of your classes</p>
@@ -107,37 +99,35 @@ export default function DashboardPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           }
-          title="No spaces yet"
+          title="No classes yet"
           description='Click the + next to "Classes" in the sidebar to create your first class.'
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {spaces.map((space, i) => (
-            <Link key={space.id} to={`/teacher/spaces/${space.id}`}
+            <Link key={space.space_id} to={`/teacher/spaces/${space.space_id}`}
               className={`card p-4 sm:p-5 transition-all duration-150 group relative overflow-hidden active:scale-98 ${space.isLocked ? 'opacity-75' : 'hover:border-brand-200 hover:shadow-card-hover'}`}>
 
-              {/* Locked banner */}
               {space.isLocked && (
                 <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
-                  Locked — subscribe to Premium to unlock
+                  Locked — upgrade plan to unlock
                 </div>
               )}
 
               <div className={`flex items-start gap-3 ${space.isLocked ? 'mt-7' : ''}`}>
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${space.isLocked ? 'bg-gray-200' : ''}`}
                   style={!space.isLocked ? { background: space.cover_color || SPACE_COLORS[i % SPACE_COLORS.length] } : {}}>
-                  {space.isLocked ? (
-                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  ) : <span className="text-xl">{space.icon || space.name[0].toUpperCase()}</span>}
+                  {space.isLocked
+                    ? <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    : <span className="text-xl">{space.icon || space.space_name?.[0]?.toUpperCase()}</span>
+                  }
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`font-semibold truncate transition-colors ${space.isLocked ? 'text-gray-400' : 'text-gray-900 group-hover:text-brand-600'}`}>
-                    {space.name}
+                    {space.space_name}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">{space.subject || 'No subject'}</p>
                 </div>

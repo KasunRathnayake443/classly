@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { nanoid } from 'nanoid'
-import { getPlanLimits, fetchTeacherSubscription } from '../../lib/planEngine'
+import { getPlanLimits } from '../../lib/planEngine'
 
 const COLORS = [
   '#4F46E5', '#059669', '#D97706', '#DB2777',
@@ -14,7 +14,7 @@ const COLORS = [
 const ICONS = ['📚', '🔬', '🧮', '🎨', '🌍', '⚗️', '📖', '🎭', '🏛️', '💻', '🎵', '🏃', '🌿', '🔭', '✏️', '🧬']
 
 export default function CreateSpaceModal({ onClose, onCreated }) {
-  const { user } = useAuth()
+  const { user, subscription } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedColor, setSelectedColor] = useState(COLORS[0])
@@ -23,15 +23,14 @@ export default function CreateSpaceModal({ onClose, onCreated }) {
 
   async function onSubmit(data) {
     setError('')
-    // Get actual active plan via subscription engine
-    const [{ plan: activePlan }, spaceCountRes] = await Promise.all([
-      fetchTeacherSubscription(user.id),
-      supabase.from('spaces').select('*', { count: 'exact', head: true }).eq('teacher_id', user.id),
-    ])
-    const limits = getPlanLimits(activePlan)
-    if (limits.max_spaces !== Infinity && (spaceCountRes.count || 0) >= limits.max_spaces) {
-      setError(`You've reached the ${activePlan?.name || 'current plan'} limit of ${activePlan?.max_spaces} classes. Upgrade to add more.`)
-      return
+    // Use cached subscription from context — no extra query needed
+    const limits = getPlanLimits(subscription?.plan)
+    if (limits.max_spaces !== Infinity) {
+      const { count } = await supabase.from('spaces').select('*', { count: 'exact', head: true }).eq('teacher_id', user.id)
+      if ((count || 0) >= limits.max_spaces) {
+        setError(`You've reached the ${subscription?.plan?.name || 'current plan'} limit of ${subscription?.plan?.max_spaces} classes. Upgrade to add more.`)
+        return
+      }
     }
     setLoading(true)
     try {

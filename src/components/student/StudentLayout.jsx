@@ -32,6 +32,7 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
         )}
       </div>
 
+      {/* Student chip */}
       <div className="p-3 border-b border-gray-100">
         <div className="flex items-center gap-2.5 bg-violet-50 rounded-xl px-3 py-2.5">
           {avatarUrl ? (
@@ -76,14 +77,7 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
           My grades
         </NavLink>
 
-        <NavLink to="/student/profile" onClick={onClose} className={({ isActive }) =>
-          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
-        }>
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          Profile
-        </NavLink>
+
 
         <NavLink to="/student/notifications" onClick={onClose} className={({ isActive }) =>
           `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
@@ -122,9 +116,11 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
         )}
       </nav>
 
+
+      {/* Sign out */}
       <div className="p-2 border-t border-gray-100">
         <button onClick={onSignOut}
-          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-xl transition-all">
+          className="flex items-center gap-2.5 w-full px-3 py-2 text-sm font-medium text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
@@ -158,89 +154,14 @@ export default function StudentLayout() {
   }
 
   async function fetchUnreadCount() {
-    const now = new Date().toISOString()
-    const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-
-    // Space announcements
-    const { data: spaceAnnouncements } = await supabase
-      .from('announcements').select('id')
-      .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
-    const spaceIds = (spaceAnnouncements || []).map(a => a.id)
-
-    // Admin announcements targeting students or all
-    const { data: adminAnnouncements } = await supabase
-      .from('admin_announcements').select('id, target')
-    const adminIds = (adminAnnouncements || [])
-      .filter(a => a.target === 'all' || a.target === 'students')
-      .map(a => a.id)
-
-    // Due date reminders — content due in next 24h not yet submitted
-    const { data: enrollments } = await supabase
-      .from('enrollments').select('space_id').eq('student_id', user.id).eq('status', 'active')
-    const enrolledSpaceIds = (enrollments || []).map(e => e.space_id)
-    let reminderCount = 0
-    if (enrolledSpaceIds.length > 0) {
-      const { data: dueContent } = await supabase
-        .from('content').select('id')
-        .in('space_id', enrolledSpaceIds)
-        .in('type', ['assignment', 'quiz'])
-        .gte('due_at', now).lte('due_at', in24h)
-      if (dueContent?.length > 0) {
-        const { data: submitted } = await supabase
-          .from('submissions').select('content_id')
-          .eq('student_id', user.id).in('content_id', dueContent.map(c => c.id))
-        const submittedIds = new Set((submitted || []).map(s => s.content_id))
-        reminderCount = dueContent.filter(c => !submittedIds.has(c.id)).length
-      }
-    }
-
-    // Content notifications unread count
-    const { data: contentNotifs } = await supabase
-      .from('content_notifications')
-      .select('id')
-      .eq('student_id', user.id)
-    const contentNotifReadKey = `skooly_content_notif_reads_${user.id}`
-    const savedReads = JSON.parse(localStorage.getItem(contentNotifReadKey) || '[]')
-    const savedReadSet = new Set(savedReads)
-    const contentNotifUnread = (contentNotifs || []).filter(n => !savedReadSet.has(`content-notif-${n.id}`)).length
-
-    // Check which reminders were already dismissed (seen on notifications page)
-    const reminderDismissedKey = `skooly_reminder_dismissed_${user.id}`
-    const dismissedReminders = new Set(JSON.parse(localStorage.getItem(reminderDismissedKey) || '[]'))
-    
-    // Build reminder IDs to check (same logic as NotificationsPage)
-    const in24h2 = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    let undismissedReminderCount = 0
-    if (enrolledSpaceIds.length > 0) {
-      const { data: dueContent2 } = await supabase
-        .from('content').select('id')
-        .in('space_id', enrolledSpaceIds)
-        .in('type', ['assignment', 'quiz'])
-        .gte('due_at', now).lte('due_at', in24h2)
-      if (dueContent2?.length > 0) {
-        const { data: submitted2 } = await supabase
-          .from('submissions').select('content_id')
-          .eq('student_id', user.id).in('content_id', dueContent2.map(c => c.id))
-        const submittedIds2 = new Set((submitted2 || []).map(s => s.content_id))
-        undismissedReminderCount = dueContent2
-          .filter(c => !submittedIds2.has(c.id))
-          .filter(c => !dismissedReminders.has(`reminder-${c.id}`))
-          .length
-      }
-    }
-
-    let unread = undismissedReminderCount + contentNotifUnread
-    if (spaceIds.length > 0) {
-      const { data: spaceReads } = await supabase.from('announcement_reads')
-        .select('announcement_id').eq('student_id', user.id).in('announcement_id', spaceIds)
-      unread += spaceIds.length - (spaceReads?.length || 0)
-    }
-    if (adminIds.length > 0) {
-      const { data: adminReads } = await supabase.from('admin_announcement_reads')
-        .select('announcement_id').eq('user_id', user.id).in('announcement_id', adminIds)
-      unread += adminIds.length - (adminReads?.length || 0)
-    }
-    setUnreadCount(unread)
+    if (!user?.id) return
+    try {
+      // Single RPC replaces 6+ separate queries
+      const { data, error } = await supabase.rpc('get_student_unread_count', {
+        student_id: user.id
+      })
+      if (!error && data != null) setUnreadCount(Number(data))
+    } catch (e) { /* non-critical */ }
   }
 
   async function handleSignOut() {

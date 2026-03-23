@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { syncSubscriptionStatus } from '../lib/planEngine'
 
-const AuthContext = createContext(null)
+const AuthContext = createContext({})
+export const useAuth = () => useContext(AuthContext)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -17,84 +18,75 @@ export function AuthProvider({ children }) {
       else setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
-    })
-
-    return () => subscription.unsubscribe()
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user ?? null)
+        if (session?.user) fetchProfile(session.user.id)
+        else { setProfile(null); setSubscription({ transaction: null, plan: null }); setLoading(false) }
+      }
+    )
+    return () => authSub.unsubscribe()
   }, [])
 
   async function fetchProfile(userId) {
-    const { data, error } = await supabase
+    // Single query — get profile
+    const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single()
     setProfile(data)
 
-    // Sync subscription for teachers
+    // Sync subscription for teachers (expire old txns, get current plan)
+    // Only fires once per login session
     if (data?.role === 'teacher') {
       try {
         const sub = await syncSubscriptionStatus(userId)
         setSubscription(sub)
-        // Re-fetch profile in case plan slug was updated
-        const { data: updated } = await supabase.from('profiles').select('*').eq('id', userId).single()
-        setProfile(updated)
+        // Re-fetch profile in case plan slug changed
+        if (sub.plan?.slug !== data?.plan) {
+          const { data: updated } = await supabase.from('profiles').select('*').eq('id', userId).single()
+          setProfile(updated)
+        }
       } catch (e) { /* non-critical */ }
     }
 
     setLoading(false)
   }
 
-  // Sign up as a teacher
-  async function signUp(email, password, fullName) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, role: 'teacher' } },
-    })
+  async function signUp({ email, password, fullName }) {
+    const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
     if (data.user) {
       await supabase.from('profiles').upsert({
-        id: data.user.id,
-        full_name: fullName,
-        email,
-        role: 'teacher',
+        id: data.user.id, email, full_name: fullName, role: 'teacher', plan: 'free'
       })
     }
     return data
   }
 
-  // Sign up as a student
-  async function signUpStudent(email, password, fullName) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName, role: 'student' } },
-    })
+  async function signUpStudent({ email, password, fullName }) {
+    const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
     if (data.user) {
       await supabase.from('profiles').upsert({
-        id: data.user.id,
-        full_name: fullName,
-        email,
-        role: 'student',
+        id: data.user.id, email, full_name: fullName, role: 'student'
       })
     }
     return data
   }
 
-  async function signIn(email, password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  async function signIn({ email, password }) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
+    return data
   }
 
   async function signOut() {
     await supabase.auth.signOut()
   }
 
+  // Refresh profile + subscription — call after profile edits or plan changes
   async function refreshProfile() {
     if (!user) return
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
@@ -108,14 +100,11 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, subscription, loading, signUp, signUpStudent, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{
+      user, profile, subscription, loading,
+      signUp, signUpStudent, signIn, signOut, refreshProfile
+    }}>
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
-  return ctx
 }

@@ -65,7 +65,7 @@ export async function syncSubscriptionStatus(teacherId) {
 
 // ── Get limits for a plan ──────────────────────────────────────────────────────
 export function getPlanLimits(plan) {
-  if (!plan) return { max_spaces: 3, max_students: 20 }
+  if (!plan) return { max_spaces: Infinity, max_students: Infinity } // no plan loaded yet — don't lock anything
   return {
     max_spaces: plan.max_spaces === -1 ? Infinity : plan.max_spaces,
     max_students: plan.max_students === -1 ? Infinity : plan.max_students,
