@@ -33,7 +33,7 @@ export default function StudentGradesPage() {
   useEffect(() => { fetchGrades() }, [])
 
   async function fetchGrades() {
-    // Get all active enrollments
+    // Get enrollments first (need space IDs for parallel content+submissions fetch)
     const { data: enrollments } = await supabase
       .from('enrollments')
       .select('space_id, spaces(id, name, subject)')
@@ -45,19 +45,22 @@ export default function StudentGradesPage() {
 
     const spaceIds = enrollments.map(e => e.space_id)
 
-    // Get all scoreable content across all spaces
-    const { data: contentItems } = await supabase
-      .from('content')
-      .select('id, title, type, due_at, space_id')
-      .in('space_id', spaceIds)
-      .in('type', ['quiz', 'assignment'])
-      .order('created_at', { ascending: true })
+    // Fetch content and submissions in parallel
+    const [contentRes, submissionsRes] = await Promise.all([
+      supabase
+        .from('content')
+        .select('id, title, type, due_at, space_id')
+        .in('space_id', spaceIds)
+        .in('type', ['quiz', 'assignment'])
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('submissions')
+        .select('content_id, score, status, submitted_at')
+        .eq('student_id', user.id)
+    ])
 
-    // Get all submissions for this student
-    const { data: submissions } = await supabase
-      .from('submissions')
-      .select('content_id, score, status, submitted_at')
-      .eq('student_id', user.id)
+    const contentItems = contentRes.data
+    const submissions = submissionsRes.data
 
     const subMap = Object.fromEntries((submissions || []).map(s => [s.content_id, s]))
 

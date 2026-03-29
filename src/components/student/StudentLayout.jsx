@@ -3,8 +3,6 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 
-const SPACE_COLORS = ['#4F46E5', '#059669', '#D97706', '#DB2777', '#0891B2', '#7C3AED']
-
 function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, onClose }) {
   const displayName = profile?.full_name || user?.email || 'Student'
   const initials = profile?.full_name
@@ -14,13 +12,11 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
 
   return (
     <div className="flex flex-col h-full">
+
+      {/* Logo */}
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-violet-600 rounded-lg flex items-center justify-center shadow-sm">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Skooly" className="w-7 h-7 rounded-lg object-contain" />
           <span className="font-semibold text-gray-900 tracking-tight">Skooly</span>
         </div>
         {onClose && (
@@ -32,9 +28,10 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
         )}
       </div>
 
-      {/* Student chip */}
+      {/* Student chip — clickable, goes to profile */}
       <div className="p-3 border-b border-gray-100">
-        <div className="flex items-center gap-2.5 bg-violet-50 rounded-xl px-3 py-2.5">
+        <NavLink to="/student/profile" onClick={onClose}
+          className="flex items-center gap-2.5 bg-violet-50 rounded-xl px-3 py-2.5 hover:bg-violet-100 transition-colors group">
           {avatarUrl ? (
             <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
           ) : (
@@ -42,13 +39,17 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
               {initials}
             </div>
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-gray-900 truncate">{displayName}</p>
-            <p className="text-xs text-violet-500">Student</p>
+            <p className="text-xs text-violet-500">Student · Edit profile</p>
           </div>
-        </div>
+          <svg className="w-3.5 h-3.5 text-violet-300 flex-shrink-0 group-hover:text-violet-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+          </svg>
+        </NavLink>
       </div>
 
+      {/* Nav links */}
       <nav className="p-2 flex-1 overflow-y-auto">
         <NavLink to="/student" end onClick={onClose} className={({ isActive }) =>
           `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
@@ -56,7 +57,7 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
-          My classes
+          Dashboard
         </NavLink>
 
         <NavLink to="/student/join" onClick={onClose} className={({ isActive }) =>
@@ -77,7 +78,14 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
           My grades
         </NavLink>
 
-
+        <NavLink to="/student/calendar" onClick={onClose} className={({ isActive }) =>
+          `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
+        }>
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Calendar
+        </NavLink>
 
         <NavLink to="/student/notifications" onClick={onClose} className={({ isActive }) =>
           `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
@@ -98,24 +106,24 @@ function SidebarContent({ profile, user, enrollments, unreadCount, onSignOut, on
           )}
         </NavLink>
 
+        {/* My classes section */}
         {enrollments.length > 0 && (
           <div className="mt-4">
             <div className="px-3 mb-1.5">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My classes</span>
             </div>
-            {enrollments.map((e, i) => (
+            {enrollments.map((e) => (
               <NavLink key={e.id} to={`/student/spaces/${e.spaces?.id}`} onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${isActive ? 'bg-violet-50 text-violet-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`
                 }>
-                <span className="text-base leading-none flex-shrink-0">{e.spaces?.icon || "📚"}</span>
+                <span className="text-base leading-none flex-shrink-0">{e.spaces?.icon || '📚'}</span>
                 <span className="truncate">{e.spaces?.name}</span>
               </NavLink>
             ))}
           </div>
         )}
       </nav>
-
 
       {/* Sign out */}
       <div className="p-2 border-t border-gray-100">
@@ -140,8 +148,8 @@ export default function StudentLayout() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  useEffect(() => { fetchEnrollments(); fetchUnreadCount() }, [location.pathname])
-  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+  useEffect(() => { fetchEnrollments() }, [])
+  useEffect(() => { fetchUnreadCount(); setSidebarOpen(false) }, [location.pathname])
 
   async function fetchEnrollments() {
     const { data } = await supabase
@@ -156,10 +164,7 @@ export default function StudentLayout() {
   async function fetchUnreadCount() {
     if (!user?.id) return
     try {
-      // Single RPC replaces 6+ separate queries
-      const { data, error } = await supabase.rpc('get_student_unread_count', {
-        student_id: user.id
-      })
+      const { data, error } = await supabase.rpc('get_student_unread_count', { student_id: user.id })
       if (!error && data != null) setUnreadCount(Number(data))
     } catch (e) { /* non-critical */ }
   }
@@ -192,6 +197,7 @@ export default function StudentLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile top bar */}
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 flex-shrink-0">
           <button onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-xl hover:bg-gray-100 text-gray-600 transition-colors">
@@ -200,11 +206,7 @@ export default function StudentLayout() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-violet-600 rounded-md flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 1L2 4v4c0 3.3 2.5 6 6 7 3.5-1 6-3.7 6-7V4L8 1z"/>
-              </svg>
-            </div>
+            <img src="/logo.png" alt="Skooly" className="w-6 h-6 rounded-md object-contain" />
             <span className="font-semibold text-gray-900 text-sm">Skooly</span>
           </div>
         </div>
@@ -214,9 +216,10 @@ export default function StudentLayout() {
         </main>
       </div>
 
+      {/* Logout confirm dialog */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
             <h2 className="text-base font-semibold text-gray-900 text-center mb-2">Sign out?</h2>
             <p className="text-sm text-gray-500 text-center mb-6">You will be returned to the home page.</p>
             <div className="flex gap-2">

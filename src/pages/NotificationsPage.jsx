@@ -42,140 +42,99 @@ export default function NotificationsPage() {
 
   async function fetchAll() {
     const now = new Date().toISOString()
+    const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     const isTeacher = profile?.role === 'teacher'
-
-    // ── Due date reminders (students only) ───────────────────────────────────
-    let dueReminders = []
-    if (!isTeacher) {
-      const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-
-      // Get enrolled spaces
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('space_id, spaces(name)')
-        .eq('student_id', user.id)
-        .eq('status', 'active')
-
-      const spaceIds = (enrollments || []).map(e => e.space_id)
-      const spaceMap = Object.fromEntries((enrollments || []).map(e => [e.space_id, e.spaces?.name]))
-
-      if (spaceIds.length > 0) {
-        // Get content due within 24 hours that student hasn't submitted
-        const { data: dueContent } = await supabase
-          .from('content')
-          .select('id, title, type, due_at, space_id')
-          .in('space_id', spaceIds)
-          .in('type', ['assignment', 'quiz'])
-          .gte('due_at', now)
-          .lte('due_at', in24h)
-          .order('due_at', { ascending: true })
-
-        if (dueContent?.length > 0) {
-          // Check which ones student already submitted
-          const { data: submissions } = await supabase
-            .from('submissions')
-            .select('content_id')
-            .eq('student_id', user.id)
-            .in('content_id', dueContent.map(c => c.id))
-
-          const submittedIds = new Set((submissions || []).map(s => s.content_id))
-
-          dueReminders = dueContent
-            .filter(c => !submittedIds.has(c.id))
-            .map(c => ({
-              id: `reminder-${c.id}`,
-              _type: 'reminder',
-              _contentId: c.id,
-              _spaceId: c.space_id,
-              title: `${c.type === 'quiz' ? 'Quiz' : 'Assignment'} due soon: ${c.title}`,
-              body: `Due in ${timeUntil(c.due_at)} · ${spaceMap[c.space_id] || 'Class'}`,
-              due_at: c.due_at,
-              created_at: c.due_at,
-              _source: spaceMap[c.space_id] || 'Class',
-              is_pinned: false,
-            }))
-        }
-      }
-    }
-    setReminders(dueReminders)
-
-    // Mark all current reminders as "seen" so the badge clears after visiting this page
-    if (dueReminders.length > 0) {
-      const key = `skooly_reminder_dismissed_${user.id}`
-      const dismissed = JSON.parse(localStorage.getItem(key) || '[]')
-      const newIds = dueReminders.map(r => r.id).filter(id => !dismissed.includes(id))
-      if (newIds.length > 0) {
-        localStorage.setItem(key, JSON.stringify([...dismissed, ...newIds]))
-      }
-    }
-
-    // ── Content notifications (new content published) ─────────────────────
-    // These are separate from due reminders — they notify when new content is added
-
-
-    // ── New content notifications (students only) ──────────────────────────
-    let contentNotifItems = []
-    if (!isTeacher) {
-      const { data: contentNotifs } = await supabase
-        .from('content_notifications')
-        .select('*, content(id, title, type, space_id, available_from, spaces(name))')
-        .eq('student_id', user.id)
-        .order('notified_at', { ascending: false })
-        .limit(20)
-
-      contentNotifItems = (contentNotifs || [])
-        .filter(n => n.content) // content not deleted
-        .map(n => ({
-          id: `content-notif-${n.id}`,
-          _notifId: n.id,
-          _type: 'content_notif',
-          _contentId: n.content.id,
-          _spaceId: n.content.space_id,
-          title: `New ${n.content.type}: ${n.content.title}`,
-          body: null,
-          created_at: n.notified_at,
-          _source: n.content.spaces?.name || 'Class',
-          is_pinned: false,
-        }))
-    }
-
-    // ── Space announcements (students only) ──────────────────────────────────
-    let spaceItems = []
-    if (!isTeacher) {
-      const { data: spaceAnnouncements } = await supabase
-        .from('announcements')
-        .select('*, spaces(name, subject)')
-        .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false })
-      spaceItems = (spaceAnnouncements || []).map(a => ({
-        ...a,
-        _type: 'space',
-        _source: a.spaces?.name || 'Class',
-      }))
-    }
-
-    // ── Admin announcements ──────────────────────────────────────────────────
-    const { data: adminAnnouncements } = await supabase
-      .from('admin_announcements')
-      .select('*')
-      .order('created_at', { ascending: false })
-
     const planSlug = profile?.plan || 'free'
     const role = profile?.role || 'student'
-    const relevantAdmin = (adminAnnouncements || []).filter(a => {
+
+    // Fetch everything possible in parallel on first pass
+    const [enrollmentsRes, contentNotifsRes, spaceAnnouncementsRes, adminAnnouncementsRes] = await Promise.all([
+      isTeacher ? Promise.resolve({ data: [] }) :
+        supabase.from('enrollments').select('space_id, spaces(name)')
+          .eq('student_id', user.id).eq('status', 'active'),
+      isTeacher ? Promise.resolve({ data: [] }) :
+        supabase.from('content_notifications')
+          .select('*, content(id, title, type, space_id, available_from, spaces(name))')
+          .eq('student_id', user.id)
+          .order('notified_at', { ascending: false }).limit(20),
+      isTeacher ? Promise.resolve({ data: [] }) :
+        supabase.from('announcements').select('*, spaces(name, subject)')
+          .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
+          .order('is_pinned', { ascending: false })
+          .order('created_at', { ascending: false }),
+      supabase.from('admin_announcements').select('*')
+        .order('created_at', { ascending: false }),
+    ])
+
+    const enrollments = enrollmentsRes.data || []
+    const spaceIds = enrollments.map(e => e.space_id)
+    const spaceMap = Object.fromEntries(enrollments.map(e => [e.space_id, e.spaces?.name]))
+
+    const spaceItems = (spaceAnnouncementsRes.data || []).map(a => ({
+      ...a, _type: 'space', _source: a.spaces?.name || 'Class',
+    }))
+    const relevantAdmin = (adminAnnouncementsRes.data || []).filter(a => {
       if (a.target === 'all') return true
       if (a.target === 'teachers' && role === 'teacher') return true
       if (a.target === 'students' && role === 'student') return true
       if (a.target === `plan:${planSlug}` && role === 'teacher') return true
       return false
-    }).map(a => ({
-      ...a,
-      _type: 'admin',
-      _source: '📣 Skooly',
-      is_pinned: false,
-    }))
+    }).map(a => ({ ...a, _type: 'admin', _source: '📣 Skooly', is_pinned: false }))
 
+    const spaceAnnoIds = spaceItems.map(a => a.id)
+    const adminIds = relevantAdmin.map(a => a.id)
+
+    // Second parallel pass — queries that depend on first pass results
+    const [dueContentRes, submissionsRes, spaceReadsRes, adminReadsRes] = await Promise.all([
+      spaceIds.length > 0 && !isTeacher
+        ? supabase.from('content').select('id, title, type, due_at, space_id')
+            .in('space_id', spaceIds).in('type', ['assignment', 'quiz'])
+            .gte('due_at', now).lte('due_at', in24h).order('due_at', { ascending: true })
+        : Promise.resolve({ data: [] }),
+      !isTeacher
+        ? supabase.from('submissions').select('content_id').eq('student_id', user.id)
+        : Promise.resolve({ data: [] }),
+      spaceAnnoIds.length > 0
+        ? supabase.from('announcement_reads').select('announcement_id')
+            .eq('student_id', user.id).in('announcement_id', spaceAnnoIds)
+        : Promise.resolve({ data: [] }),
+      adminIds.length > 0
+        ? supabase.from('admin_announcement_reads').select('announcement_id')
+            .eq('user_id', user.id).in('announcement_id', adminIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    // Build due reminders
+    const submittedIds = new Set((submissionsRes.data || []).map(s => s.content_id))
+    const dueReminders = (dueContentRes.data || [])
+      .filter(c => !submittedIds.has(c.id))
+      .map(c => ({
+        id: `reminder-${c.id}`, _type: 'reminder', _contentId: c.id, _spaceId: c.space_id,
+        title: `${c.type === 'quiz' ? 'Quiz' : 'Assignment'} due soon: ${c.title}`,
+        body: null, due_at: c.due_at, created_at: c.due_at,
+        _source: spaceMap[c.space_id] || 'Class', is_pinned: false,
+      }))
+    setReminders(dueReminders)
+
+    if (dueReminders.length > 0) {
+      const key = `skooly_reminder_dismissed_${user.id}`
+      const dismissed = JSON.parse(localStorage.getItem(key) || '[]')
+      const newIds = dueReminders.map(r => r.id).filter(id => !dismissed.includes(id))
+      if (newIds.length > 0) localStorage.setItem(key, JSON.stringify([...dismissed, ...newIds]))
+    }
+
+    // Build content notification items
+    const contentNotifItems = (contentNotifsRes.data || [])
+      .filter(n => n.content)
+      .map(n => ({
+        id: `content-notif-${n.id}`, _notifId: n.id,
+        _type: 'content_notif', _contentId: n.content.id, _spaceId: n.content.space_id,
+        title: `New ${n.content.type}: ${n.content.title}`,
+        body: null, created_at: n.notified_at,
+        _source: n.content.spaces?.name || 'Class', is_pinned: false,
+      }))
+
+    // Merge and sort
     const merged = [...contentNotifItems, ...spaceItems, ...relevantAdmin].sort((a, b) => {
       if (a.is_pinned && !b.is_pinned) return -1
       if (!a.is_pinned && b.is_pinned) return 1
@@ -183,32 +142,17 @@ export default function NotificationsPage() {
     })
     setItems(merged)
 
-    // ── Read status ──────────────────────────────────────────────────────────
-    const spaceIds2 = spaceItems.map(a => a.id)
-    const adminIds = relevantAdmin.map(a => a.id)
+    // Build read set
     const readSet = new Set()
-    if (spaceIds2.length > 0) {
-      const { data: spaceReads } = await supabase
-        .from('announcement_reads').select('announcement_id')
-        .eq('student_id', user.id).in('announcement_id', spaceIds2)
-      ;(spaceReads || []).forEach(r => readSet.add(r.announcement_id))
-    }
-    if (adminIds.length > 0) {
-      const { data: adminReads } = await supabase
-        .from('admin_announcement_reads').select('announcement_id')
-        .eq('user_id', user.id).in('announcement_id', adminIds)
-      ;(adminReads || []).forEach(r => readSet.add(r.announcement_id))
-    }
-    // Content notifications — track read state locally using localStorage key
+    ;(spaceReadsRes.data || []).forEach(r => readSet.add(r.announcement_id))
+    ;(adminReadsRes.data || []).forEach(r => readSet.add(r.announcement_id))
     const contentNotifReadKey = `skooly_content_notif_reads_${user.id}`
-    const savedReads = JSON.parse(localStorage.getItem(contentNotifReadKey) || '[]')
-    savedReads.forEach(id => readSet.add(id))
-
+    JSON.parse(localStorage.getItem(contentNotifReadKey) || '[]').forEach(id => readSet.add(id))
     setReads(readSet)
     setLoading(false)
   }
 
-  async function markRead(item) {
+    async function markRead(item) {
     if (item._type === 'reminder') return
     if (reads.has(item.id)) return
     if (item._type === 'content_notif') {
