@@ -22,7 +22,7 @@ function isInPast(dt) {
   return dt && new Date(dt) < new Date()
 }
 
-export default function CreateContentModal({ spaceId, onClose, onCreated }) {
+export default function CreateContentModal({ spaceId, onClose, onCreated, defaultDate, headerNote }) {
   const { user } = useAuth()
   const [type, setType] = useState('note')
   const [loading, setLoading] = useState(false)
@@ -30,7 +30,7 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
   const [noteContent, setNoteContent] = useState('')
 
   // Unified date state
-  const [availableFrom, setAvailableFrom] = useState('')   // start / publish time
+  const [availableFrom, setAvailableFrom] = useState(defaultDate ? `${defaultDate}T09:00` : '')   // start / publish time
   const [availableUntil, setAvailableUntil] = useState('') // end time (quiz/assignment only)
   const [dueAt, setDueAt] = useState('')                   // due date (quiz/assignment only)
   const [dateError, setDateError] = useState('')
@@ -132,7 +132,10 @@ export default function CreateContentModal({ spaceId, onClose, onCreated }) {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8">
         {/* Header */}
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Add content</h2>
+          <div>
+            <h2 className="font-semibold text-gray-900">Add content</h2>
+            {headerNote && <p className="text-xs text-gray-400 mt-0.5">{headerNote}</p>}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>

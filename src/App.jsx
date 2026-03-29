@@ -25,8 +25,8 @@ import JoinSpacePage from './components/student/JoinSpacePage'
 import StudentSpacePage from './components/student/StudentSpacePage'
 import StudentContentPage from './components/student/StudentContentPage'
 import NotificationsPage from './pages/NotificationsPage'
+import TeacherCalendarPage from './pages/TeacherCalendarPage'
 import StudentGradesPage from './pages/StudentGradesPage'
-import StudentCalendarPage from './pages/StudentCalendarPage'
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -96,6 +96,7 @@ export default function App() {
         <Route path="upgrade" element={<UpgradePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="calendar" element={<TeacherCalendarPage />} />
       </Route>
 
       {/* Student area */}
@@ -106,7 +107,6 @@ export default function App() {
         <Route path="spaces/:spaceId/content/:contentId" element={<StudentContentPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="grades" element={<StudentGradesPage />} />
-        <Route path="calendar" element={<StudentCalendarPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="upgrade" element={<UpgradePage />} />
         <Route path="subscription" element={<SubscriptionPage />} />
